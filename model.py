@@ -235,11 +235,14 @@ class Model():
 			if not training:
 				print("Using the inference helper")
 				start_tokens = tf.fill([args.seq_length], args.seq_length)
-				end_token = args.seq_length
+				end_token = 0
 				print("\tState token: ", start_tokens.shape)
 				print("\tEnd token: ", end_token)
-				decoder_helper = s2s.GreedyEmbeddingHelper(embedding, 
-					start_tokens, end_token)
+				#decoder_helper = s2s.GreedyEmbeddingHelper(embedding, 
+				#	start_tokens, end_token)
+				seq_lens = tf.fill([args.batch_size], args.seq_length)
+				embedded_inputs = tf.nn.embedding_lookup(embedding, tf.to_int32(self.input_data))
+				decoder_helper = s2s.TrainingHelper(embedded_inputs, seq_lens)
 			else:
 				print("Using the training helper:")
 				seq_lens = tf.fill([args.batch_size], args.seq_length)
@@ -254,36 +257,30 @@ class Model():
 			decoder_output, last_state, output_len = s2s.dynamic_decode(decoder)
 			outputs = decoder_output.rnn_output
 
-	
-			print("\n\noutputs: ", outputs.shape)		
-			#print("\nlast_state:", last_state)
 			output = tf.to_float(outputs)
 			print("Decoder outputs converted to floats")
-			
-			#print("The decoder stuff: ", len(stuff))
-			#print(stuff[1])
 
 
 		print("Getting logits")
 		
-		#print("\tSoftmax_w: ", softmax_w.shape)
-		#self.logits = tf.matmul(output, softmax_w) + softmax_b
-		#self.logits = tf.layers.dense(output, units=args.vocab_size)
-
+	
 		## the final layers
 		##	maps the outputs  to [ vocab_size ] probs
 		self.logits = tf.contrib.layers.fully_connected(output, args.vocab_size)
 
-	
 		
 		## both of these are for sampling
 		with tf.name_scope("probabilities"):
 			print("Getting probs")
-			self.probs = tf.squeeze(tf.nn.softmax(self.logits,name= "probs_softmax"), name="flatten_probs")
+			self.probs = tf.nn.softmax(self.logits, name= "probs_softmax")
 		
 		with tf.name_scope("hardmax"):
 			print("Getting hardmax")
-			self.hardmax = tf.squeeze(s2s.hardmax(self.logits), name="flatten_hardmax")
+			self.hardmax = tf.squeeze(s2s.hardmax(self.logits))
+
+		with tf.name_scope("predict_index"):
+			print("Probs shape: ", self.probs.shape)
+			self.predict = tf.argmax(tf.squeeze(self.probs))
 
 
 
@@ -294,7 +291,8 @@ class Model():
 		## make into [ batch_size, seq_len, vocab_size ] 
 		##	  it should already be this size, but this forces tf to recognize
 		##	  the shape
-		split_logits = tf.reshape(self.logits, [args.batch_size, args.seq_length, args.vocab_size])
+		split_logits = tf.reshape(self.logits, 
+				[args.batch_size, args.seq_length, args.vocab_size])
 
 
 		with tf.name_scope("compute_loss"):
@@ -364,7 +362,7 @@ class Model():
 			feed = {self.input_data: x, self.initial_state: state}
 			[state] = sess.run([self.final_state], feed)
 		
-		print("Built primer")
+		print("Built feed dict")
 
 		def weighted_pick(weights):
 			t = np.cumsum(weights)
@@ -372,42 +370,37 @@ class Model():
 			return int(np.searchsorted(t, np.random.rand(1)*s))
 
 		
-
 		ret = prime
 		char = prime[-1]
+
+		print("Kicking off the predictions...")
 		for n in range(num):
 			x = np.zeros((1, 1))
 			x[0, 0] = vocab[char]
 			feed = {self.input_data: x, self.initial_state: state}
-			#print("Got feed: ", feed)
 			
-			#probs = sess.run(self.probs)
-			#print("Got probs")
-			#state = sess.run(self.final_state)
-			#print("Got state")
 			
-			probs, state, hardmax = sess.run([self.probs, self.final_state, self.hardmax], feed)
+			#logits = sess.run([self.logits], feed)
 			
-			print("Probs: ", probs)
-			#print("State: ", state)
-			
-			print("\tlen: ", len(probs))
-			print("Hardmax: ", hardmax)
-			print("\n")
 
-			p = probs[0]
+			#probs, hardmax = sess.run([self.probs, self.hardmax], feed)			 
+			predict = sess.run([self.predict], feed)
+
+			#p = probs[0]
 
 			#print("Got probs")
-			if sampling_type == 0:
-				sample = np.argmax(p)
-			elif sampling_type == 2:
-				if char == ' ':
-					sample = weighted_pick(p)
-				else:
-					sample = np.argmax(p)
-			else:  # sampling_type == 1 default:
-				sample = weighted_pick(p)
-
+			#if sampling_type == 0:
+			#	sample = np.argmax(p)
+			#elif sampling_type == 2:
+			#	if char == ' ':
+			#		sample = weighted_pick(p)
+			#	else:
+			#		sample = np.argmax(p)
+			#else:  # sampling_type == 1 default:
+			#	sample = weighted_pick(p)
+			
+			sample = predict
+		
 			print("sample: ", sample)
 			pred = chars[sample]
 			ret += pred

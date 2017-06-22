@@ -36,6 +36,7 @@ def sample(args):
 
 	print("Sample model built")
 
+	os.environ["CUDA_VISIBLE_DEVICES"]="0"
 	
 
 	with tf.Session() as sess:
