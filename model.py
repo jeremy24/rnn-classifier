@@ -52,18 +52,9 @@ class Model():
 
 		with tf.name_scope("Cells"):
 
-			cells = []
-			#for x in range(args.num_layers):
-			#	cell = cell_fn(args.rnn_size)
-			#	if training and (args.output_keep_prob < 1.0 or args.input_keep_prob < 1.0):
-			#		cell = rnn.DropoutWrapper(cell,
-			#							  input_keep_prob=args.input_keep_prob,
-			#							  output_keep_prob=args.output_keep_prob)
-			#	cells.append(cell)
-			## if odd number of layers > 1
+			cells = []			
 
-			
-
+			## only working number of layers right now
 			if args.num_layers == 3:
 				print("\nHave three layers, making sandwich...")
 				cells = []
@@ -135,10 +126,7 @@ class Model():
 			print("Cells:  ", cells)
 			self.cell = rnn.MultiRNNCell(cells, state_is_tuple=True)
 			cell = self.cell
-		#self.input_data = tf.placeholder(
-		#	tf.int32, [args.batch_size, args.seq_length], name="step_input")
-		#self.targets = tf.placeholder(
-		#	tf.int32, [args.batch_size, args.seq_length], name="step_target")
+		
 
 		## all teh data for the epoch
 		with tf.device("/gpu:0"):
@@ -177,30 +165,20 @@ class Model():
 			with tf.name_scope("inc_step"):
 				self.inc_step = tf.assign_add(self.step, 1.0, name="inc_step")
 
-		with tf.variable_scope('rnnlm'):
-			#softmax_w = tf.get_variable("softmax_w",
-			#							[args.rnn_size, args.vocab_size])
-			
-			## for new decoder
-			softmax_w = tf.get_variable("softmax_w", 
-					[args.batch_size, args.rnn_size, args.vocab_size])
+		#with tf.variable_scope('rnnlm'):
+		#	## for new decoder
+		#	softmax_w = tf.get_variable("softmax_w", 
+		#			[args.batch_size, args.rnn_size, args.vocab_size], trainable=False)
+		#
+		#	softmax_b = tf.get_variable("softmax_b", [args.vocab_size], trainable=False)
 
-			softmax_b = tf.get_variable("softmax_b", [args.vocab_size])
-
-		## process input on cpu
-		#with tf.device("/cpu:0"):
+		## grad the batch data for the current step
 		with tf.name_scope("grab_step_data"):
 			index = tf.to_int32(self.step, name="step_to_int")
 			
 			self.input_data = tf.assign(self.input_data, self.all_input_data[index])
 			self.targets = tf.assign(self.targets, self.all_target_data[index])
 			
-			#self.input_data = self.all_input_data[index]
-			#self.targets = self.all_target_data[index]
-		
-		#with tf.name_scope("inc_step"):
-		#	self.inc_step = tf.assign_add(self.step, 1, name="inc_step") 
-
 		
 		## this maps vectors of len vocab_size => vectors of size rnn_size
 		with tf.name_scope("get_embedding"):
@@ -253,12 +231,15 @@ class Model():
 				
 			print("\nBuilding decoder helper")
 			self.seq_length = args.seq_length
-			#output = tf.reshape(tf.concat(outputs, 1), [-1, args.rnn_size])
-
+		
 			if not training:
 				print("Using the inference helper")
-				decoder_helper = s2s.ScheduledEmbeddingTrainingHelper(inputs, args.seq_length,
-					embedding, 1.0)
+				start_tokens = tf.fill([args.seq_length], args.seq_length)
+				end_token = args.seq_length
+				print("\tState token: ", start_tokens.shape)
+				print("\tEnd token: ", end_token)
+				decoder_helper = s2s.GreedyEmbeddingHelper(embedding, 
+					start_tokens, end_token)
 			else:
 				print("Using the training helper:")
 				seq_lens = tf.fill([args.batch_size], args.seq_length)
@@ -273,12 +254,8 @@ class Model():
 			decoder_output, last_state, output_len = s2s.dynamic_decode(decoder)
 			outputs = decoder_output.rnn_output
 
-			#print("1: ", decoder_output)
-			#print("\n\n2: ", last_state)
-			#print("\n\n3: ", other)
-
-			print("\n\noutputs: ", outputs.shape)
-			
+	
+			print("\n\noutputs: ", outputs.shape)		
 			#print("\nlast_state:", last_state)
 			output = tf.to_float(outputs)
 			print("Decoder outputs converted to floats")
@@ -288,31 +265,42 @@ class Model():
 
 
 		print("Getting logits")
-		try:
-			self.logits = tf.matmul(output, softmax_w) + softmax_b
-		except Exception as ex:
-			print("Error getting logits, bailing out: ", ex)
-			exit(1)
-		print("Got logits")
+		
+		#print("\tSoftmax_w: ", softmax_w.shape)
+		#self.logits = tf.matmul(output, softmax_w) + softmax_b
+		#self.logits = tf.layers.dense(output, units=args.vocab_size)
+
+		## the final layers
+		##	maps the outputs  to [ vocab_size ] probs
+		self.logits = tf.contrib.layers.fully_connected(output, args.vocab_size)
+
 	
+		
 		## both of these are for sampling
-		self.probs = tf.nn.softmax(self.logits)
-		self.hardmax = s2s.hardmax(self.logits)
+		with tf.name_scope("probabilities"):
+			print("Getting probs")
+			self.probs = tf.squeeze(tf.nn.softmax(self.logits,name= "probs_softmax"), name="flatten_probs")
+		
+		with tf.name_scope("hardmax"):
+			print("Getting hardmax")
+			self.hardmax = tf.squeeze(s2s.hardmax(self.logits), name="flatten_hardmax")
+
+
 
 		tf.summary.scalar("max_prob", tf.reduce_max(self.probs))
 		tf.summary.scalar("min_prob", tf.reduce_min(self.probs))
 			
-		print("Starting loss")
-		print("logits: ", self.logits.shape)
-		print("targets: ", self.targets.shape)
-		#print("split: ", tf.split(self.logits, args.seq_length, 0))
 
 		## make into [ batch_size, seq_len, vocab_size ] 
+		##	  it should already be this size, but this forces tf to recognize
+		##	  the shape
 		split_logits = tf.reshape(self.logits, [args.batch_size, args.seq_length, args.vocab_size])
 
-		loss_weights = tf.ones([args.batch_size, args.seq_length])
 
-		loss = s2s.sequence_loss(split_logits, tf.to_int32(self.targets), loss_weights, name="compute_loss")
+		with tf.name_scope("compute_loss"):
+			loss_weights = tf.ones([args.batch_size, args.seq_length])
+			loss = s2s.sequence_loss(split_logits, tf.to_int32(self.targets),
+					loss_weights, name="compute_loss")
 
 		
 		tf.summary.scalar("max_loss", tf.reduce_max(loss))
@@ -320,6 +308,8 @@ class Model():
 
 		with tf.name_scope('cost'):
 			self.cost = loss #tf.reduce_sum(loss) / args.batch_size / args.seq_length
+		
+		
 		self.final_state = last_state	
 		self.lr = tf.Variable(0.0, trainable=False, name="lr")
 		
@@ -396,7 +386,15 @@ class Model():
 			#state = sess.run(self.final_state)
 			#print("Got state")
 			
-			[probs, state] = sess.run([self.probs, self.final_state], feed)
+			probs, state, hardmax = sess.run([self.probs, self.final_state, self.hardmax], feed)
+			
+			print("Probs: ", probs)
+			#print("State: ", state)
+			
+			print("\tlen: ", len(probs))
+			print("Hardmax: ", hardmax)
+			print("\n")
+
 			p = probs[0]
 
 			#print("Got probs")
@@ -410,6 +408,7 @@ class Model():
 			else:  # sampling_type == 1 default:
 				sample = weighted_pick(p)
 
+			print("sample: ", sample)
 			pred = chars[sample]
 			ret += pred
 			char = pred
