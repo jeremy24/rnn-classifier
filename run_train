@@ -1,0 +1,1 @@
+python train.py --data_dir=./ --print_cycle=10 --seq_length=128 --num_epochs=10 --learning_rate=.05 --save_every=10 --output_keep_prob=0.8 --input_keep_prob=0.8 --num_layers=2 --rnn_size=256 --gpu=0

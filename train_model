@@ -1,0 +1,62 @@
+#!/usr/bin/fish
+
+
+
+
+
+if test (count $argv) > 0
+
+	set dir $argv[1]
+	
+	set print_cycle 128
+	set lr .05
+	set out_prob 0.8
+	set in_prob 0.8
+	set num_layers 3
+	set rnn_size 128
+	set gpu 0 
+	set seq_len 64
+	set num_epochs 1
+	set save_every 512
+	set data_dir .
+	set log_dir $dir"/logs"
+	set batch_size 100
+	set max_grad 5
+	set decay_rate 0.97
+	set model "lstm"
+
+	echo "Making directories..."
+
+	if test (count $argv) = 2
+		set do_delete $argv[2]
+		if [ $do_delete = "true" ]
+			echo "Deleting the save dir first.."
+			rm -rf $dir
+			rm -rf $logdir
+		end
+	end
+	
+
+	if test (count $argv) = 3
+		set $print_cycle $argv[3]
+	end
+	
+	#set datadir $dir"/data"
+	set savedir $dir"/save"
+	#set logdir	$dir"/logs"	
+
+	mkdir -p $dir $savedir $log_dir
+
+	#mkdir $datadir
+	#mkdir $logdir
+	
+	echo "Launching the model..."
+	
+	python train.py --model=$model --decay_rate=$decay_rate --grad_clip=$max_grad --batch_size=$batch_size --log_dir=$log_dir --data_dir=$data_dir --save_dir=$savedir --print_cycle=$print_cycle --seq_length=$seq_len --num_epochs=$num_epochs --learning_rate=$lr --save_every=$save_every --output_keep_prob=$out_prob --input_keep_prob=$in_prob --num_layers=$num_layers --rnn_size=$rnn_size --gpu=$gpu
+
+
+
+	
+else
+	echo "Please provide a directory for the model data."
+end
