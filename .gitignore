@@ -6,6 +6,17 @@ __pycache__/
 # C extensions
 *.so
 
+
+
+
+models/
+*.txt
+nips_papers/
+*.npy
+*.pkl
+
+
+
 # Distribution / packaging
 .Python
 env/
