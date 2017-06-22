@@ -182,7 +182,8 @@ class Model():
 		
 		## this maps vectors of len vocab_size => vectors of size rnn_size
 		with tf.name_scope("get_embedding"):
-			embedding = tf.get_variable("embedding", [args.vocab_size, args.rnn_size], trainable=False)
+			embedding = tf.get_variable("embedding", 
+					[args.vocab_size, args.rnn_size], trainable=False)
 			inputs = tf.nn.embedding_lookup(embedding, tf.to_int32(self.input_data))
 
 
@@ -241,7 +242,8 @@ class Model():
 				#decoder_helper = s2s.GreedyEmbeddingHelper(embedding, 
 				#	start_tokens, end_token)
 				seq_lens = tf.fill([args.batch_size], args.seq_length)
-				embedded_inputs = tf.nn.embedding_lookup(embedding, tf.to_int32(self.input_data))
+				embedded_inputs = tf.nn.embedding_lookup(embedding, 
+						tf.to_int32(self.input_data))
 				decoder_helper = s2s.TrainingHelper(embedded_inputs, seq_lens)
 			else:
 				print("Using the training helper:")
@@ -280,8 +282,12 @@ class Model():
 
 		with tf.name_scope("predict_index"):
 			print("Probs shape: ", self.probs.shape)
-			self.predict = tf.argmax(tf.squeeze(self.probs))
+			s = tf.squeeze(self.probs, 0)
+			s = tf.reshape(s, [args.batch_size, args.vocab_size])
+			print("after: ", s.shape)
 
+			self.predict = s #tf.argmax(tf.squeeze(self.probs))
+			#self.predict  = tf.reshape(s, [args.vocab_size])	
 
 
 		tf.summary.scalar("max_prob", tf.reduce_max(self.probs))
@@ -396,7 +402,7 @@ class Model():
 			#		sample = weighted_pick(p)
 			#	else:
 			#		sample = np.argmax(p)
-			#else:  # sampling_type == 1 default:
+			#else:	# sampling_type == 1 default:
 			#	sample = weighted_pick(p)
 			
 			sample = predict
