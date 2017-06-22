@@ -8,10 +8,11 @@ __pycache__/
 
 
 
-
 models/
+models
 *.txt
 nips_papers/
+nips_papers
 *.npy
 *.pkl
 
