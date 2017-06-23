@@ -144,7 +144,10 @@ def train(args):
 	dump_args(args)
 
 	# used if you want a lot of logging
-	sess_config = tf.ConfigProto(log_device_placement=True)
+	sess_config = tf.ConfigProto(log_device_placement=False)
+	
+	# used to watch gpu memory thats actually used
+	sess_config.gpu_options.allow_growth = True
 
 	# set up some data capture lists
 	global_start = time.time()
@@ -155,7 +158,7 @@ def train(args):
 	args.data["avg_time_per_step"] = list()
 	args.data["logged_time"] = list()
 
-	with tf.Session() as sess:
+	with tf.Session( config = sess_config) as sess:
 		# instrument for tensorboard
 		summaries = tf.summary.merge_all()
 		writer = tf.summary.FileWriter(
