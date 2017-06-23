@@ -11,6 +11,13 @@ class TextLoader():
 		self.batch_size = batch_size
 		self.seq_length = seq_length
 		self.encoding = encoding
+		self.chars = None
+		self.vocab_size = None
+		self.vocab = None
+		self.tensor = None
+		self.num_batches = None
+		self.batches = None
+		self.pointer = 0
 		
 		print("Using data_dir: ", self.data_dir)
 
@@ -47,11 +54,11 @@ class TextLoader():
 		self.vocab = dict(zip(self.chars, range(len(self.chars))))
 		self.tensor = np.load(tensor_file)
 		self.num_batches = int(self.tensor.size / (self.batch_size *
-												   self.seq_length))
+												self.seq_length))
 
 	def create_batches(self):
 		self.num_batches = int(self.tensor.size / (self.batch_size *
-												   self.seq_length))
+												self.seq_length))
 
 		# When the data (tensor) is too small,
 		# let's give them a better error message
@@ -64,9 +71,9 @@ class TextLoader():
 		ydata[:-1] = xdata[1:]
 		ydata[-1] = xdata[0]
 		x_batches = np.split(xdata.reshape(self.batch_size, -1),
-								  self.num_batches, 1)
+								self.num_batches, 1)
 		y_batches = np.split(ydata.reshape(self.batch_size, -1),
-								  self.num_batches, 1)
+								self.num_batches, 1)
 
 		self.batches = list()
 
@@ -74,7 +81,7 @@ class TextLoader():
 			x = x_batches[i]
 			y = y_batches[i]
 			item = np.array([x, y])
-			## make each batch immutable
+			# make each batch immutable
 			item.flags.writeable = False
 			self.batches.append(item)
 

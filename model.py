@@ -67,22 +67,22 @@ class Model():
 			batch_shape = [args.batch_size, args.seq_length]
 
 			self.all_input_data = tf.Variable(tf.zeros(all_shape, dtype=self.gpu_type),
-											  dtype=self.gpu_type, trainable=False,
-											  name="all_inputs")
+											dtype=self.gpu_type, trainable=False,
+											name="all_inputs")
 
 			self.all_target_data = tf.Variable(tf.zeros(all_shape, dtype=self.gpu_type),
-											   dtype=self.gpu_type, trainable=False,
-											   name="all_targets")
+											dtype=self.gpu_type, trainable=False,
+											name="all_targets")
 
 			self.step = tf.Variable(0, dtype=self.gpu_type, trainable=False, name="step")
 
 			# data for each step
 			self.input_data = tf.Variable(tf.zeros(batch_shape, dtype=self.gpu_type),
-										  dtype=self.gpu_type, name="batch_input",
-										  trainable=False)
+										dtype=self.gpu_type, name="batch_input",
+										trainable=False)
 			self.targets = tf.Variable(tf.zeros(batch_shape, dtype=self.gpu_type),
-									   dtype=self.gpu_type, name="batch_targets",
-									   trainable=False)
+									dtype=self.gpu_type, name="batch_targets",
+									trainable=False)
 			self.step = tf.Variable(0, dtype=self.gpu_type, trainable=False, name="step")
 
 			with tf.name_scope("inc_step"):
@@ -247,7 +247,7 @@ class Model():
 		with tf.name_scope("compute_loss"):
 			loss_weights = tf.ones([args.batch_size, args.seq_length])
 			self.loss = s2s.sequence_loss(split_logits, tf.to_int32(self.targets),
-										  loss_weights, name="compute_loss")
+										loss_weights, name="compute_loss")
 
 		with tf.name_scope('cost'):
 			self.cost = self.loss

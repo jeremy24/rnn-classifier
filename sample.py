@@ -37,15 +37,11 @@ def sample(args):
 	print("Sample model built")
 
 	os.environ["CUDA_VISIBLE_DEVICES"]="0"
-	
 
 	with tf.Session() as sess:
 		tf.global_variables_initializer().run()
 		
 		print("Globals:")
-		#for x in tf.global_variables():
-		#	print(x)
-		#exit(1)
 
 		saver = tf.train.Saver(tf.global_variables()[5:])
 		print("Got saver")
@@ -56,7 +52,7 @@ def sample(args):
 			saver.restore(sess, ckpt.model_checkpoint_path)
 			print("Restored checkpoint")
 			print(model.sample(sess, chars, vocab, args.n, args.prime,
-							   args.sample).encode('utf-8'))
+							args.sample).encode('utf-8'))
 
 if __name__ == '__main__':
 	main()

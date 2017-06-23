@@ -15,8 +15,7 @@ import numpy as np
 import tensorflow as tf
 from tensorflow.python.client import timeline
 
-
-os.environ["LD_LIBRARY_PATH"]="/usr/local/cuda/extras/CUPTI/lib64/"
+os.environ["LD_LIBRARY_PATH"] = "/usr/local/cuda/extras/CUPTI/lib64/"
 
 
 def dump_args(args):
@@ -24,7 +23,7 @@ def dump_args(args):
 	try:
 		filename = os.path.join(args.save_dir, "hyper_params.json")
 		with open(filename, "w+") as fout:
-			data=dict()
+			data = dict()
 			args = vars(args)
 			for key in args:
 				data[key] = args[key]
@@ -38,7 +37,7 @@ def dump_args(args):
 def main():
 	"""main fn"""
 	parser = argparse.ArgumentParser(
-						formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+		formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 	parser.add_argument('--data_dir', type=str, default='data/tinyshakespeare',
 						help='data directory containing input.txt')
 	parser.add_argument('--save_dir', type=str, default='save',
@@ -82,8 +81,7 @@ def main():
 	args = parser.parse_args()
 	dump_args(args)
 
-	
-	os.environ["CUDA_VISIBLE_DEVICES"]=args.gpu
+	os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu
 
 	train(args)
 
@@ -102,15 +100,16 @@ def train(args):
 	data_loader = TextLoader(args.data_dir, args.batch_size, args.seq_length)
 	args.vocab_size = data_loader.vocab_size
 
-
 	print("Vocab size: ", args.vocab_size)
 
 	# check compatibility if training is continued from previously saved model
 	if args.init_from is not None:
 		# check if all necessary files exist
-		assert os.path.isdir(args.init_from)," %s must be a a path" % args.init_from
-		assert os.path.isfile(os.path.join(args.init_from,"config.pkl")),"config.pkl file does not exist in path %s"%args.init_from
-		assert os.path.isfile(os.path.join(args.init_from,"chars_vocab.pkl")),"chars_vocab.pkl.pkl file does not exist in path %s" % args.init_from
+		assert os.path.isdir(args.init_from), " %s must be a a path" % args.init_from
+		assert os.path.isfile(
+			os.path.join(args.init_from, "config.pkl")), "config.pkl file does not exist in path %s" % args.init_from
+		assert os.path.isfile(os.path.join(args.init_from,
+										"chars_vocab.pkl")), "chars_vocab.pkl.pkl file does not exist in path %s" % args.init_from
 		ckpt = tf.train.get_checkpoint_state(args.init_from)
 		assert ckpt, "No checkpoint found"
 		assert ckpt.model_checkpoint_path, "No model path found in checkpoint"
@@ -120,15 +119,14 @@ def train(args):
 			saved_model_args = cPickle.load(f)
 		need_be_same = ["model", "rnn_size", "num_layers", "seq_length"]
 		for checkme in need_be_same:
-			assert vars(saved_model_args)[checkme]==vars(args)[checkme],"Command line argument and saved model disagree on '%s' "%checkme
+			assert vars(saved_model_args)[checkme] == vars(args)[
+				checkme], "Command line argument and saved model disagree on '%s' " % checkme
 
 		# open saved vocab/dict and check if vocabs/dicts are compatible
 		with open(os.path.join(args.init_from, 'chars_vocab.pkl'), 'rb') as f:
 			saved_chars, saved_vocab = cPickle.load(f)
-		assert saved_chars==data_loader.chars, "Data and loaded model disagree on character set!"
-		assert saved_vocab==data_loader.vocab, "Data and loaded model disagree on dictionary mappings!"
-
-		
+		assert saved_chars == data_loader.chars, "Data and loaded model disagree on character set!"
+		assert saved_vocab == data_loader.vocab, "Data and loaded model disagree on dictionary mappings!"
 
 	dump_data(data_loader, args)
 
@@ -139,15 +137,16 @@ def train(args):
 	model = Model(args, data_loader.num_batches)
 
 	print("Model built")
-	
-	## refresh dumped data since some models
-	##	change the values of args
+
+	# refresh dumped data since some models
+	# change the values of args
 	dump_data(data_loader, model.args)
 	dump_args(args)
 
+	# used if you want a lot of logging
 	sess_config = tf.ConfigProto(log_device_placement=True)
 
-	## set up some data capture lists
+	# set up some data capture lists
 	global_start = time.time()
 
 	args.data = dict()
@@ -160,28 +159,28 @@ def train(args):
 		# instrument for tensorboard
 		summaries = tf.summary.merge_all()
 		writer = tf.summary.FileWriter(
-				os.path.join(args.log_dir, time.strftime("%Y-%m-%d-%H-%M-%S")))
+			os.path.join(args.log_dir, time.strftime("%Y-%m-%d-%H-%M-%S")))
 		writer.add_graph(sess.graph)
-				
+
 		print("Saving global variables")
 		sess.run(tf.global_variables_initializer())
 		saver = tf.train.Saver(tf.global_variables())
 		# restore model
 		if args.init_from is not None:
 			saver.restore(sess, ckpt.model_checkpoint_path)
-		
+
 		print("Starting...")
 		print("Have {} epochs and {} batches per epoch".format(args.num_epochs, data_loader.num_batches))
 		total_time = 0.0
-		#run_meta = tf.RunMetadata()
+		# run_meta = tf.RunMetadata()
 		for epoch in range(args.num_epochs):
 			sess.run(tf.assign(model.lr,
-							   args.learning_rate * (args.decay_rate ** epoch)))
-			
+							args.learning_rate * (args.decay_rate ** epoch)))
+
 			print("Resetting batch pointer for epoch: ", epoch)
 			data_loader.reset_batch_pointer()
-			state = sess.run(model.initial_state)
-			
+			# state = sess.run(model.initial_state)
+
 			start = time.time()
 
 			print("Copying over data for epoch")
@@ -198,13 +197,13 @@ def train(args):
 			x_batches = np.array(x_batches, dtype=np.float32)
 			y_batches = np.array(y_batches, dtype=np.float32)
 			try:
-		
+
 				sess.run(tf.assign(model.all_input_data, x_batches))
 				print("x_batches copied")
 				sess.run(tf.assign(model.all_target_data, y_batches))
 				print("y_batches copied")
 				sess.run(tf.assign(model.step, 0))
-				
+
 				print("Step copied")
 			except ValueError as valEr:
 				print("Error copying over data: ", valEr)
@@ -213,16 +212,13 @@ def train(args):
 			print("Successfully copied over the data for epoch {}".format(epoch))
 
 			for batch in range(data_loader.num_batches):
-				
-				step = epoch * data_loader.num_batches + batch	
 
-				## if printing	
+				step = epoch * data_loader.num_batches + batch
+
+				# if printing
 				if step % print_cycle == 0 and step > 0:
-					print("running summary")
-					#summ = sess.run(summaries)
-					print("got summaries")
-					summ, train_loss, state, _ = sess.run([summaries,  model.cost, model.final_state, model.train_op])
-					writer.add_summary(summ, step)
+					summary, train_loss, state, _ = sess.run([summaries, model.cost, model.final_state, model.train_op])
+					writer.add_summary(summary, step)
 					end = time.time()
 
 					total_time += end - start
@@ -230,43 +226,38 @@ def train(args):
 					steps_left = total_steps - step
 					print("{}/{} (epoch {}), train_loss: {:.3f}, time/{}: {:.3f} time/step = {:.3f}  time left: {:.2f}m"
 						.format(step, total_steps, epoch, train_loss, print_cycle,
-							end - start, avg_time_per, steps_left * avg_time_per/60))
-					
+						end - start, avg_time_per, steps_left * avg_time_per / 60))
+
 					start = time.time()
-					
-					global_diff = time.time() -  global_start
+
+					global_diff = time.time() - global_start
 					args.data["losses"].append(float(train_loss))
 					args.data["logged_time"].append(int(global_diff))
 					args.data["avg_time_per_step"].append(float(avg_time_per))
 
-				else: ## else normal training
+				else:  # else normal training
 					train_loss, state, _ = sess.run(
-							[model.cost, model.final_state, model.train_op])
+						[model.cost, model.final_state, model.train_op])
 
-				if (step) % args.save_every == 0\
-						or (epoch == args.num_epochs-1 and
-							batch == data_loader.num_batches-1):
+				last_batch = batch == data_loader.num_batches - 1
+				last_epoch = epoch == args.num_epochs - 1
+				if step % args.save_every == 0 or (last_batch and last_epoch):
 					# save for the last result
 					checkpoint_path = os.path.join(args.save_dir, 'model.ckpt')
 					saver.save(sess, checkpoint_path, global_step=step)
 					dump_args(args)
 					print("model saved to {}".format(checkpoint_path))
 					args.data["last_recorded_loss"] = {
-							"time": int(time.time() - global_start),
-							"loss": float(train_loss)
-							}
+						"time": int(time.time() - global_start),
+						"loss": float(train_loss)
+					}
 					args.data["total_train_time"] = {
-							"steps": int(total_steps),
-							"time": int(time.time() - global_start)
-							}
-				## increment the model step
+						"steps": int(total_steps),
+						"time": int(time.time() - global_start)
+					}
+				# increment the model step
 				sess.run(model.inc_step)
-			
-			#trace = timeline.Timeline(step_stats=run_metadata.step_stats)
-			#trace_file = open("timeline.ctf.json", "w")
-			#trace_file.write(trace.generate_chome_trace_format())
-			#trace_file.close()
-			#exit(1)
+
 
 if __name__ == '__main__':
 	main()
