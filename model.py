@@ -22,7 +22,7 @@ class Model():
 			return ret
 
 	def build_outputs(self, inputs):
-		"""
+		""" 
 		:param inputs:
 		:return: outputs, last_state
 		"""
@@ -63,17 +63,27 @@ class Model():
 	def hang_gpu_variables(self):
 		with tf.device("/gpu:0"):
 			args = self.args
+			print("\nHanging GPU variables")
 			all_shape = [self.num_batches, args.batch_size, args.seq_length]
 			batch_shape = [args.batch_size, args.seq_length]
+			
+			print("\tall_shape: ", all_shape)
+			print("\tbatch_shape: ", batch_shape)
+			
 
+			#all_s = tf.placeholder(self.gpu_type, [self.num_batches, args.batch_size, args.seq_length])
+
+			print("\tsetting all input")
 			self.all_input_data = tf.Variable(tf.zeros(all_shape, dtype=self.gpu_type),
 											dtype=self.gpu_type, trainable=False,
 											name="all_inputs")
 
+			print("\tsetting all targets")
 			self.all_target_data = tf.Variable(tf.zeros(all_shape, dtype=self.gpu_type),
 											dtype=self.gpu_type, trainable=False,
 											name="all_targets")
-
+			
+			
 			self.step = tf.Variable(0, dtype=self.gpu_type, trainable=False, name="step")
 
 			# data for each step
@@ -83,6 +93,7 @@ class Model():
 			self.targets = tf.Variable(tf.zeros(batch_shape, dtype=self.gpu_type),
 									dtype=self.gpu_type, name="batch_targets",
 									trainable=False)
+			
 			self.step = tf.Variable(0, dtype=self.gpu_type, trainable=False, name="step")
 
 			with tf.name_scope("inc_step"):
@@ -154,14 +165,26 @@ class Model():
 		"""
 		# only working number of layers right now
 		if self.args.num_layers == 3:
-			return self.build_three_layers()
+			ret = self.build_three_layers()
+		print("Done building cells")
+		return ret
 
 	def __init__(self, args, num_batches, training=True):
 		""" init """
-		self.args = args
+		# self.args = args
+		
 		if not training:
-			args.batch_size = 1
-			args.seq_length = 1
+			print("Not training")
+			print("Prev batch size: ", args.batch_size)
+			print("Prex seq length: ", args.seq_length)
+			#args.batch_size = 1
+			#args.seq_length = 1
+
+		self.args = args
+		self.args.orig_batch_size = self.args.batch_size
+		#self.args.batch_size = None
+		#args.batch_size = None
+		
 
 		self.gpu_type = tf.float32
 		self.is_training = training
@@ -181,8 +204,11 @@ class Model():
 			self.cell = rnn.MultiRNNCell(cells, state_is_tuple=True)
 			cell = self.cell
 
+		print("Setting self.initial_state")
 		self.initial_state = cell.zero_state(self.args.batch_size, self.gpu_type)
-		self.num_batches = int(num_batches)
+		
+		print("Setting self.num_batches")
+		self.num_batches = num_batches
 
 		# all teh data for the epoch
 		# all of these are pinned to the gpu
@@ -192,7 +218,9 @@ class Model():
 		self.inc_step = None
 		self.input_data = None
 		self.targets = None
+		
 
+		print("Calling hang_gpu_variables")
 		# assign values to the above variables
 		self.hang_gpu_variables()
 
@@ -231,7 +259,7 @@ class Model():
 		if not self.is_training:
 			with tf.name_scope("predict_index"):
 				print("Probs shape: ", self.probs.shape)
-				s = tf.squeeze(self.probs, 0)
+				s = tf.squeeze(self.probs)
 				s = tf.reshape(s, [args.batch_size, args.vocab_size])
 				print("after: ", s.shape)
 
@@ -288,6 +316,9 @@ class Model():
 		tf.summary.histogram('logits', self.logits)
 		tf.summary.histogram('loss', self.loss)
 		tf.summary.scalar('train_loss', self.cost)
+
+
+
 
 	def sample(self, sess, chars, vocab, num=200, prime='The '):
 		print("In sample")
