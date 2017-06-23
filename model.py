@@ -60,6 +60,102 @@ class Model():
             print("Decoder outputs converted to floats")
             return tf.to_float(outputs), last_state
 
+    def hang_gpu_variables(self):
+        with tf.device("/gpu:0"):
+            args = self.args
+            all_shape = [args.num_batches, args.batch_size, args.seq_length]
+            batch_shape = [args.batch_size, args.seq_length]
+
+            self.all_input_data = tf.Variable(tf.zeros(all_shape, dtype=self.gpu_type),
+                                              dtype=self.gpu_type, trainable=False,
+                                              name="all_inputs")
+
+            self.all_target_data = tf.Variable(tf.zeros(all_shape, dtype=self.gpu_type),
+                                               dtype=self.gpu_type, trainable=False,
+                                               name="all_targets")
+
+            self.step = tf.Variable(0, dtype=self.gpu_type, trainable=False, name="step")
+
+            # data for each step
+            self.input_data = tf.Variable(tf.zeros(batch_shape, dtype=self.gpu_type),
+                                          dtype=self.gpu_type, name="batch_input",
+                                          trainable=False)
+            self.targets = tf.Variable(tf.zeros(batch_shape, dtype=self.gpu_type),
+                                       dtype=self.gpu_type, name="batch_targets",
+                                       trainable=False)
+            self.step = tf.Variable(0, dtype=self.gpu_type, trainable=False, name="step")
+
+            with tf.name_scope("inc_step"):
+                self.inc_step = tf.assign_add(self.step, 1.0, name="inc_step")
+
+            # grab the batch data for the current step
+            with tf.name_scope("grab_step_data"):
+                index = tf.to_int32(self.step, name="step_to_int")
+
+                self.input_data = tf.assign(self.input_data, self.all_input_data[index])
+                self.targets = tf.assign(self.targets, self.all_target_data[index])
+
+    def build_three_layers(self, use_highway=True):
+        """
+        Build the cells for a three layer network
+        :param use_highway:
+        :return: a list of LSTM cells
+        """
+        # only working number of layers right now
+        print("\nHave three layers, making sandwich...")
+        cells = []
+
+        print("\tStarting rnn size: ", self.args.rnn_size)
+        print("\tStarting seq_length: ", self.args.seq_length)
+
+        outer_size = self.args.rnn_size
+        middle_size = outer_size // 2
+
+        if True:
+            self.args.rnn_size = outer_size
+            print("\tChanged RNN size to: ", self.args.rnn_size)
+
+        print("\tOuter size: {}  Middle size: {}".format(outer_size,
+                                                         middle_size))
+
+        # set up intersection stuff
+        highway = tf.contrib.rnn.HighwayWrapper
+
+        # project it onto the middle
+        first = self.cell_fn(outer_size)  # , num_proj = middle_size)
+        # middle = None
+
+        # normalize the first layer before the highway
+        # avg_prob = abs(self.args.input_keep_prob / self.args.output_keep_prob)
+        # first = rnn.LayerNormBasicLSTMCell(outer_size, dropout_keep_prob = avg_prob)
+
+        if use_highway:
+            self.args.using_highway = True
+            middle = highway(self.cell_fn(outer_size))
+        else:
+            middle = self.cell_fn(outer_size)
+            self.args.using_highway = False
+
+        last = self.cell_fn(outer_size)
+
+        # dropout on first and last
+        first = self.add_dropout(first, self.args.input_keep_prob, self.args.output_keep_prob)
+        last = self.add_dropout(last, self.args.input_keep_prob, self.args.output_keep_prob)
+
+        cells.append(first)
+        cells.append(middle)
+        cells.append(last)
+        return cells
+
+    def build_cells(self):
+        """
+        Build some RNN cells
+        :return: a list of cells
+        """
+        # only working number of layers right now
+        if self.args.num_layers == 3:
+            return self.build_three_layers()
+
     def __init__(self, args, num_batches, training=True):
         """ init """
         self.args = args
@@ -71,88 +167,14 @@ class Model():
         self.is_training = training
         self.seq_length = self.args.seq_length
 
-        print("Cell type is: ", args.model)
+        self.lr = tf.Variable(0.0, trainable=False, name="lr")
 
-        # if args.model == 'rnn':
-        #	 self.cell_fn = rnn.BasicRNNCell
-        # elif args.model == 'gru':
-        #	 self.cell_fn = rnn.GRUCell
-        # elif args.model == "basic_lstm":
-        #	  self.cell_fn = rnn.BasicLSTMCell
-        # elif args.model == 'lstm':
-        #	  self.cell_fn = tf.contrib.rnn.LSTMCell
-        # elif args.model == 'nas':
-        #	  self.cell_fn = rnn.NASCell
-        # else:
-        #	  raise Exception("model type not supported: {}".format(args.model))
+        print("Cell type is: ", args.model)
 
         self.cell_fn = rnn.LSTMCell
 
         with tf.name_scope("Cells"):
-            cells = []
-
-            # only working number of layers right now
-            if args.num_layers == 3:
-                print("\nHave three layers, making sandwich...")
-                cells = []
-
-                print("\tStarting rnn size: ", args.rnn_size)
-                print("\tStarting seq_length: ", args.seq_length)
-
-                outer_size = (args.rnn_size)
-                middle_size = outer_size // 2
-
-                if True:
-                    args.rnn_size = outer_size
-                    print("\tChanged RNN size to: ", args.rnn_size)
-
-                print("\tOuter size: {}  Middle size: {}".format(outer_size,
-                                                                 middle_size))
-
-                # set up intersection stuff
-                inter = tf.contrib.rnn.IntersectionRNNCell
-                highway = tf.contrib.rnn.HighwayWrapper
-                dropout_w = rnn.DropoutWrapper
-
-                # project it onto the middle
-                first = self.cell_fn(outer_size)  # , num_proj = middle_size)
-                middle = None
-
-                # normalize the first layer before the highway
-                avg_prob = abs(args.input_keep_prob / args.output_keep_prob)
-                # first = rnn.LayerNormBasicLSTMCell(outer_size, dropout_keep_prob = avg_prob)
-
-                use_highway = True
-
-                if use_highway:
-                    args.using_highway = True
-                    middle = highway(self.cell_fn(outer_size))
-                else:
-                    middle = self.cell_fn(outer_size)
-                    args.using_highway = False
-
-                last = self.cell_fn(outer_size)
-
-                ## dropout on first and last
-                first = self.add_dropout(first, args.input_keep_prob, args.output_keep_prob)
-                last = self.add_dropout(last, args.input_keep_prob, args.output_keep_prob)
-                # first = dropout_w(first, input_keep_prob = args.input_keep_prob,
-                #		output_keep_prob=args.output_keep_prob)
-                # last = dropout_w(last, input_keep_prob = args.input_keep_prob,
-                #		output_keep_prob=args.output_keep_prob)
-
-                cells.append(first)
-                cells.append(middle)
-                cells.append(last)
-
-            # out_prob = args.output_keep_prob
-            # in_prob = args.input_keep_prob
-
-            # if training and (in_prob < 1.0 or out_prob < 1.0):
-            #	for i in range(3):
-            #		cells[i] = rnn.DropoutWrapper(cells[i],
-            #				input_keep_prob=in_prob,
-            #				output_keep_prob = out_prob)
+            cells = self.build_cells()
 
             print("Squishing {} cells into one".format(len(cells)))
             print("Cells:  ", cells)
@@ -160,55 +182,19 @@ class Model():
             cell = self.cell
 
         # all teh data for the epoch
-        with tf.device("/gpu:0"):
-            self.all_input_data = tf.Variable(tf.zeros([num_batches, args.batch_size, args.seq_length],
-                                                       dtype=self.gpu_type), dtype=self.gpu_type, trainable=False,
-                                              name="all_inputs")
+        # all of these are pinned to the gpu
+        self.all_input_data = None
+        self.all_target_data = None
+        self.step = None
+        self.inc_step = None
+        self.input_data = None
+        self.targets = None
 
-            self.all_target_data = tf.Variable(tf.zeros([num_batches, args.batch_size, args.seq_length],
-                                                        dtype=self.gpu_type), dtype=self.gpu_type, trainable=False,
-                                               name="all_targets")
-
-            self.step = tf.Variable(0, dtype=self.gpu_type, trainable=False, name="step")
-
-            # data for each step
-            self.input_data = tf.Variable(tf.zeros([args.batch_size, args.seq_length],
-                                                   dtype=self.gpu_type), dtype=self.gpu_type, name="batch_input",
-                                          trainable=False)
-            self.targets = tf.Variable(tf.zeros([args.batch_size, args.seq_length],
-                                                dtype=self.gpu_type), dtype=self.gpu_type, name="batch_targets",
-                                       trainable=False)
+        # assign values to the above variables
+        self.hang_gpu_variables()
 
         self.initial_state = cell.zero_state(args.batch_size, self.gpu_type)
-
-        # self.all_data
-
         self.num_batches = int(num_batches)
-
-        # place holders for the data
-        # we copy all the data for each epoch over
-        # at the start to avoid excessive copies to the gpu
-        # "pin" the data to the gpu
-
-        with tf.device("/gpu:0"):
-            self.step = tf.Variable(0, dtype=self.gpu_type, trainable=False, name="step")
-
-            with tf.name_scope("inc_step"):
-                self.inc_step = tf.assign_add(self.step, 1.0, name="inc_step")
-
-        # with tf.variable_scope('rnnlm'):
-        #	## for new decoder
-        #	softmax_w = tf.get_variable("softmax_w",
-        #			[args.batch_size, args.rnn_size, args.vocab_size], trainable=False)
-        #
-        #	softmax_b = tf.get_variable("softmax_b", [args.vocab_size], trainable=False)
-
-        # grad the batch data for the current step
-        with tf.name_scope("grab_step_data"):
-            index = tf.to_int32(self.step, name="step_to_int")
-
-            self.input_data = tf.assign(self.input_data, self.all_input_data[index])
-            self.targets = tf.assign(self.targets, self.all_target_data[index])
 
         # this maps vectors of len vocab_size => vectors of size rnn_size
         with tf.name_scope("get_embedding"):
@@ -255,28 +241,18 @@ class Model():
         # make into [ batch_size, seq_len, vocab_size ]
         # it should already be this size, but this forces tf to recognize
         # the shape
-        split_logits = tf.reshape(self.logits,
-                                  [args.batch_size, args.seq_length, args.vocab_size])
+        logits_shape = [args.batch_size, args.seq_length, args.vocab_size]
+        split_logits = tf.reshape(self.logits, logits_shape)
 
         with tf.name_scope("compute_loss"):
             loss_weights = tf.ones([args.batch_size, args.seq_length])
             self.loss = s2s.sequence_loss(split_logits, tf.to_int32(self.targets),
                                           loss_weights, name="compute_loss")
 
-        # some nice logging
-        tf.summary.scalar("max_loss", tf.reduce_max(self.loss))
-        tf.summary.scalar("min_loss", tf.reduce_min(self.loss))
-
-        tf.summary.scalar("max_prob", tf.reduce_max(self.probs))
-        tf.summary.scalar("min_prob", tf.reduce_min(self.probs))
-
         with tf.name_scope('cost'):
             self.cost = self.loss
 
         self.final_state = last_state
-        self.lr = tf.Variable(0.0, trainable=False, name="lr")
-
-        tf.summary.scalar("learning_rate", self.lr)
 
         with tf.name_scope("optimizer"):
             self.optimizer = tf.train.AdamOptimizer(learning_rate=self.lr)
@@ -300,6 +276,15 @@ class Model():
                     tf.summary.histogram(variables[i].name, gradients[i])
 
         # instrument tensorboard
+        # some nice logging
+        tf.summary.scalar("max_loss", tf.reduce_max(self.loss))
+        tf.summary.scalar("min_loss", tf.reduce_min(self.loss))
+
+        tf.summary.scalar("max_prob", tf.reduce_max(self.probs))
+        tf.summary.scalar("min_prob", tf.reduce_min(self.probs))
+
+        tf.summary.scalar("learning_rate", self.lr)
+
         tf.summary.histogram('logits', self.logits)
         tf.summary.histogram('loss', self.loss)
         tf.summary.scalar('train_loss', self.cost)
