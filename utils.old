@@ -1,0 +1,184 @@
+import codecs
+import os
+import collections
+from six.moves import cPickle
+import numpy as np
+import math
+
+class TextLoader():
+	def __init__(self, data_dir, batch_size, seq_length, encoding='utf-8'):
+		self.data_dir = data_dir
+		self.batch_size = batch_size
+		self.seq_length = seq_length
+		self.encoding = encoding
+		self.chars = None
+		self.vocab_size = None
+		self.vocab = None
+		self.tensor = None
+		self.num_batches = None
+		self.batches = None
+		self.pointer = 0
+		
+		print("Using data_dir: ", self.data_dir)
+
+		input_file = os.path.join(data_dir, "input.txt")
+		vocab_file = os.path.join(data_dir, "vocab.pkl")
+		tensor_file = os.path.join(data_dir, "data.npy")
+
+		if not (os.path.exists(vocab_file) and os.path.exists(tensor_file)):
+			print("reading text file")
+			self.preprocess(input_file, vocab_file, tensor_file)
+		else:
+			print("loading preprocessed files")
+			self.load_preprocessed(vocab_file, tensor_file)
+		self.create_batches()
+		self.reset_batch_pointer()
+
+	def preprocess(self, input_file, vocab_file, tensor_file):
+		print("\nPreprocessing")
+		with codecs.open(input_file, "r", encoding=self.encoding) as f:
+			data = f.read()
+		print("\tRead file")
+		#counter = collections.Counter(data)
+		#count_pairs = sorted(counter.items(), key=lambda x: -x[1])
+		print("\tCounted pairs")
+		#self.chars, _ = zip(*count_pairs)
+		#self.vocab_size = len(self.chars)
+
+		self.chars = list()
+		self.vocab_size = 0
+
+		#print("\tChars:")
+		#print("\t", self.chars)
+
+		#print("\tVocab size: ", self.vocab_size)	
+		#self.vocab = dict(zip(self.chars, range(len(self.chars))))
+		self.vocab = dict()
+
+		#self.vocab = np.zeros([self.vocab_size])
+
+		#i = 0
+		#for char in self.chars:
+		#	self.vocab[ord(char)] = i
+		#	i += 1
+		
+		self.dtype = np.uint16
+
+		#if self.vocab_size < 256:
+		#	self.dtype = np.uint8
+		#elif self.vocab_size < 65536:
+		#	self.dtype = np.uint16
+		#else:
+		#	self.dtype = np.uint32
+
+		print("\tUsing dtype: ", self.dtype)
+
+		#print("\tMade vocab")
+		#with open(vocab_file, 'wb') as f:
+		#	cPickle.dump(self.chars, f)
+		
+		t_size = 5000000
+
+		print("\tPreprocess data length: ", t_size)
+		self.tensor = np.zeros([t_size], dtype = self.dtype)
+		print("\tAllocated space for self.tensor")
+		print("\tself.tensor size: ", round(self.tensor.nbytes / math.pow(1024, 3), 3), "GB")
+		
+
+		p_time = len(data) // 15
+		print("\tPringing every", p_time)
+		i = 0
+		j = 0
+
+		for x in data:
+			if i >= t_size:
+				break
+			if i % p_time == 0:
+				print("\tAt data[{}]  {}% done".format(i, round(i / len(data) * 100.0, 2)))
+
+			if x not in self.vocab:
+				self.vocab[x] = j
+				self.chars.append(x)
+				j += 1
+
+			self.tensor[i] = self.vocab[x]
+			i += 1
+		
+		self.vocab_size = len(self.vocab)
+		print("\tVocab size: ", self.vocab_size)
+		print("\tvocab: ", self.vocab)
+	
+		with open(vocab_file, "wb") as f:
+			cPickle.dump(self.chars, f)
+
+		#self.tensor = np.array(list(map(self.vocab.get, data)))
+		print("\tBuilt self.tensor")
+		np.save(tensor_file, self.tensor)
+		print("\tTensor saved")
+
+	def load_preprocessed(self, vocab_file, tensor_file):
+		with open(vocab_file, 'rb') as f:
+			self.chars = cPickle.load(f)
+		self.vocab_size = len(self.chars)
+		self.vocab = dict(zip(self.chars, range(len(self.chars))))
+		self.tensor = np.load(tensor_file)
+		self.num_batches = int(self.tensor.size / (self.batch_size *
+												self.seq_length))
+
+	def create_batches(self):
+		print("\nCreating batches:")
+		print("\tTensor size: ", self.tensor.size)
+		self.num_batches = int(self.tensor.size / (self.batch_size *
+												self.seq_length))
+
+		print("\tNum batches: ", self.num_batches)
+		# When the data (tensor) is too small,
+		# let's give them a better error message
+		if self.num_batches == 0:
+			assert False, "Not enough data. Make seq_length and batch_size small."
+		
+		self.tensor = self.tensor[:self.num_batches * self.batch_size * self.seq_length]
+		xdata = self.tensor
+		ydata = np.copy(self.tensor)
+
+		## free up that mem
+		self.tensor = None
+		ydata[:-1] = xdata[1:]
+		ydata[-1] = xdata[0]
+		
+		x_batches = np.split(xdata.reshape(self.batch_size, -1),
+								self.num_batches, 1)
+		y_batches = np.split(ydata.reshape(self.batch_size, -1),
+								self.num_batches, 1)
+
+		print("\tx_batches: {}	y_batches: {}".format(len(x_batches), len(y_batches)))
+
+		self.batches = list()
+
+		print("\tBuilding self.batches")
+		for i in range(self.num_batches):
+			x = x_batches[i]
+			y = y_batches[i]
+			item = np.array([x, y])
+			# make each batch immutable
+			item.flags.writeable = False
+			self.batches.append(item)
+		
+		print("\tself.batches: ", len(self.batches))
+
+		self.batches = np.array(self.batches)
+
+	def next_batch(self):
+		item = self.batches[self.pointer]
+		self.pointer += 1
+		return item[0], item[1]
+
+	def reset_batch_pointer(self, shuffle=True):
+		self.pointer = 0
+		if shuffle:
+			print("Shuffing batches")
+			np.random.shuffle(self.batches)
+		
+
+
+

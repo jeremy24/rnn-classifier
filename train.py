@@ -201,7 +201,7 @@ def train(args):
 			y_batches = np.array(y_batches, dtype=np.float32)
 			try:
 
-				
+						
 				
 				print("x_batches shape: ", x_batches.shape)			
 				sess.run(tf.assign(model.all_input_data, x_batches))

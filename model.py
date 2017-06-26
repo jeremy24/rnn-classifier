@@ -90,6 +90,9 @@ class Model():
 			self.input_data = tf.Variable(tf.zeros(batch_shape, dtype=self.gpu_type),
 										dtype=self.gpu_type, name="batch_input",
 										trainable=False)
+			#self.input_data = tf.get_variable("batch_input", [None, None], dtype=self.gpu_type,
+			#		trainable=False)
+
 			self.targets = tf.Variable(tf.zeros(batch_shape, dtype=self.gpu_type),
 									dtype=self.gpu_type, name="batch_targets",
 									trainable=False)
@@ -174,9 +177,9 @@ class Model():
 		# self.args = args
 		
 		if not training:
-			print("Not training")
-			print("Prev batch size: ", args.batch_size)
-			print("Prex seq length: ", args.seq_length)
+			print("\nNot training:")
+			print("\tPrev batch size: ", args.batch_size)
+			print("\tPrex seq length: ", args.seq_length)
 			#args.batch_size = 1
 			#args.seq_length = 1
 
@@ -198,9 +201,10 @@ class Model():
 
 		with tf.name_scope("Cells"):
 			cells = self.build_cells()
-
-			print("Squishing {} cells into one".format(len(cells)))
-			print("Cells:  ", cells)
+			print("\nCells:")
+			print("\tSquishing {} cells into one".format(len(cells)))
+			for c in cells:
+				print("\t", c)
 			self.cell = rnn.MultiRNNCell(cells, state_is_tuple=True)
 			cell = self.cell
 
@@ -224,6 +228,10 @@ class Model():
 		# assign values to the above variables
 		self.hang_gpu_variables()
 
+
+		#self.batch = tf.train.batch(self.all_input_data, self.args.batch_size, name="input_batch_queue")
+		#print("\nBatch size from tf.batch: ", self.batch.shape)
+
 		# this maps vectors of len vocab_size => vectors of size rnn_size
 		with tf.name_scope("get_embedding"):
 			embedding = tf.get_variable("embedding",
@@ -244,6 +252,7 @@ class Model():
 		# the final layers
 		# maps the outputs	to [ vocab_size ] probs
 		self.logits = tf.contrib.layers.fully_connected(output, args.vocab_size)
+		print("Logits shape: ", self.logits.shape)
 
 		# both of these are for sampling
 		with tf.name_scope("probabilities"):
@@ -253,27 +262,25 @@ class Model():
 		with tf.name_scope("hardmax"):
 			print("Getting hardmax")
 			self.hardmax = tf.squeeze(s2s.hardmax(self.logits))
+			self.single_hardmax = tf.argmax(self.hardmax)
 
 		# we assume predicting one at a time for now
 		# TODO rewite to be able to predict N number of seqs at once
 		if not self.is_training:
 			with tf.name_scope("predict_index"):
-				print("Probs shape: ", self.probs.shape)
-				s = tf.squeeze(self.probs)
-				s = tf.reshape(s, [args.batch_size, args.vocab_size])
-				print("after: ", s.shape)
+				preds = self.probs
 
-				self.predict = s  # tf.argmax(tf.squeeze(self.probs))
-		# self.predict	= tf.reshape(s, [args.vocab_size])
-
+				# set predict to the right series of operations
+				self.predict = tf.squeeze(preds)  
+				
 		# make into [ batch_size, seq_len, vocab_size ]
 		# it should already be this size, but this forces tf to recognize
 		# the shape
-		logits_shape = [args.batch_size, args.seq_length, args.vocab_size]
+		logits_shape = [self.args.batch_size, self.args.seq_length, self.args.vocab_size]
 		split_logits = tf.reshape(self.logits, logits_shape)
 
 		with tf.name_scope("compute_loss"):
-			loss_weights = tf.ones([args.batch_size, args.seq_length])
+			loss_weights = tf.ones([self.args.batch_size, self.args.seq_length])
 			self.loss = s2s.sequence_loss(split_logits, tf.to_int32(self.targets),
 										loss_weights, name="compute_loss")
 
@@ -303,6 +310,12 @@ class Model():
 					print("Hanging grad histogram for: ", variables[i].name)
 					tf.summary.histogram(variables[i].name, gradients[i])
 
+
+		print("\ntrainable_variables:" )
+		for var in tf.trainable_variables():
+			print("\t", var)
+
+
 		# instrument tensorboard
 		# some nice logging
 		tf.summary.scalar("max_loss", tf.reduce_max(self.loss))
@@ -318,7 +331,7 @@ class Model():
 		tf.summary.scalar('train_loss', self.cost)
 
 
-
+	
 
 	def sample(self, sess, chars, vocab, num=200, prime='The '):
 		print("In sample")
@@ -331,26 +344,57 @@ class Model():
 			feed = {self.input_data: x, self.initial_state: state}
 			[state] = sess.run([self.final_state], feed)
 
-		print("Built feed dict")
+		print("Primed the network")
 
+		# loop variables
 		ret = prime
 		char = prime[-1]
+		hardmax = None
+		prediction_idx = None
+		prediction = None
 
 		print("Kicking off the predictions...")
 		for n in range(num):
-			x = np.zeros((1, 1))
-			x[0, 0] = vocab[char]
-			feed = {self.input_data: x, self.initial_state: state}
+			try:
+				if n % 25  == 0:
+					print("N =", n)
+				
+				x = np.zeros((1, 1))
+				x[0, 0] = vocab[char]
+				#print("x:", x)
+				#x = tf.pad(2, 
+				feed = {self.input_data: x, self.initial_state: state}
+				
+				# Probs shape => [ batch_size, seq_length, vocab_size ]
+				probs = sess.run(self.probs, feed)
 
-			# logits = sess.run([self.logits], feed)
+				#probs = probs[0]
+				
+			
+				#print("Before: ", probs.shape)
+				
+				probs = probs[0]
+				#print("\nProbs: ")
+				#print("\t", len(probs))
+				#print("\t", probs.shape)
+				#print(probs)
+				
+				
 
-			# probs, hardmax = sess.run([self.probs, self.hardmax], feed)
-			predict = sess.run([self.predict], feed)
+				pred_idxs = sess.run(tf.argmax(probs, axis=1))
 
-			sample = predict
 
-			print("sample: ", sample)
-			prediction = chars[sample]
-			ret += prediction
-			char = prediction
+				# we only care about the first one
+				#print("Pred: ", pred_idxs)
+
+				for pred in pred_idxs:
+					char = chars[pred]
+					ret += char
+
+				#char = chars[prediction_idx]
+				#ret += char
+				#return ret
+			except Exception as ex:
+				print(ex)
+
 		return ret
