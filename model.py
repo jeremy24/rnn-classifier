@@ -103,11 +103,11 @@ class Model():
 				self.inc_step = tf.assign_add(self.step, 1.0, name="inc_step")
 
 			# grab the batch data for the current step
-			with tf.name_scope("grab_step_data"):
-				index = tf.to_int32(self.step, name="step_to_int")
+			#with tf.name_scope("grab_step_data"):
+			#	index = tf.to_int32(self.step, name="step_to_int")
 
-				self.input_data = tf.assign(self.input_data, self.all_input_data[index])
-				self.targets = tf.assign(self.targets, self.all_target_data[index])
+			#	self.input_data = tf.assign(self.input_data, self.all_input_data[index])
+			#	self.targets = tf.assign(self.targets, self.all_target_data[index])
 
 	def build_three_layers(self, use_highway=True):
 		"""
