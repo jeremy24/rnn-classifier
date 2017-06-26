@@ -1,0 +1,59 @@
+Making directories...
+Deleting the save dir first..
+Launching the model...
+reading text file
+Processing 10000000 items from data
+Processing done.  Vocab size: 242
+Dumping vocab to file...
+Saving tensor file...
+Batches built. Shuffling...
+Batches: 2500	Test Batches:  625
+Reseting batch pointer...
+Shuffling the batches...
+Vocab size:  242
+Dumping out pickled data...
+Building model
+Cell type is:  lstm
+Done building cells
+
+Cells:
+	Squishing 1 cells into one
+	 <tensorflow.python.ops.rnn_cell_impl.LSTMCell object at 0x7f67c2935b38>
+Setting self.initial_state
+Setting self.num_batches
+Calling hang_gpu_variables
+
+Hanging GPU variables
+	batch_shape:  [50, 64]
+
+Building decoder helper
+Using the training helper:
+	seq_lens:  (50,)
+	inputs shape:  (50, 64, 128)
+Decoder outputs converted to floats
+Getting logits
+Logits shape:  (50, ?, 242)
+Getting probs
+Getting hardmax
+Hanging grad histogram for:  decoder/multi_rnn_cell/cell_0/lstm_cell/kernel:0
+Hanging grad histogram for:  decoder/multi_rnn_cell/cell_0/lstm_cell/bias:0
+Hanging grad histogram for:  fully_connected/weights:0
+Hanging grad histogram for:  fully_connected/biases:0
+
+trainable_variables:
+	 <tf.Variable 'decoder/multi_rnn_cell/cell_0/lstm_cell/kernel:0' shape=(256, 512) dtype=float32_ref>
+	 <tf.Variable 'decoder/multi_rnn_cell/cell_0/lstm_cell/bias:0' shape=(512,) dtype=float32_ref>
+	 <tf.Variable 'fully_connected/weights:0' shape=(128, 242) dtype=float32_ref>
+	 <tf.Variable 'fully_connected/biases:0' shape=(242,) dtype=float32_ref>
+Model built
+Dumping out pickled data...
+Saving global variables
+Starting...
+Have 1 epochs and 2500 batches per epoch
+Reseting batch pointer...
+Shuffling the batches...
+Total size of batch data:  0.03 GB
+Resetting batch pointer for epoch:  0
+Reseting batch pointer...
+Shuffling the batches...
+model saved to ./models/three_test//save/model.ckpt

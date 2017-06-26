@@ -151,10 +151,13 @@ def train(args):
 	dump_args(args)
 
 	# used if you want a lot of logging
-	sess_config = tf.ConfigProto(log_device_placement=False)
+	sess_config = tf.ConfigProto()
 	
 	# used to watch gpu memory thats actually used
 	sess_config.gpu_options.allow_growth = True
+	
+	# used to show where things are being placed
+	sess_config.log_device_placement = False
 
 	# set up some data capture lists
 	global_start = time.time()
@@ -235,13 +238,15 @@ def train(args):
 				step = epoch * data_loader.num_batches + batch
 
 				x, y = data_loader.next_batch()
-				ops = [ tf.assign(model.input_data, x), tf.assign(model.targets, y) ]
-				sess.run(ops)
+				#ops = [ tf.assign(model.input_data, x), tf.assign(model.targets, y) ]
+				#sess.run(ops)
+
+				feed = { model.input_data:x, model.targets: y }
 
 				# if printing
 				if step % print_cycle == 0 and step > 0:
 					summary, train_loss, state, _ = sess.run([summaries, model.cost, 
-						model.final_state, model.train_op])
+						model.final_state, model.train_op], feed)
 					
 					writer.add_summary(summary, step)
 					end = time.time()
@@ -262,7 +267,7 @@ def train(args):
 
 				else:  # else normal training
 					train_loss, state, _ = sess.run(
-						[model.cost, model.final_state, model.train_op])
+						[model.cost, model.final_state, model.train_op], feed)
 					last_batch = batch == data_loader.num_batches - 1
 				last_epoch = epoch == args.num_epochs - 1
 				

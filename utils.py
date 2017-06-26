@@ -25,7 +25,7 @@ class TextLoader():
 		self.create_batches()
 		self.reset_batch_pointer()
 
-	def preprocess(self, input_file, vocab_file, tensor_file, todo=5000000):
+	def preprocess(self, input_file, vocab_file, tensor_file, todo=10000000):
 		with codecs.open(input_file, "r", encoding=self.encoding) as f:
 			data = f.read()
 		

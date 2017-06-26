@@ -12,7 +12,7 @@ if test (count $argv) > 0
 	set lr .05
 	set out_prob 0.8
 	set in_prob 0.8
-	set num_layers 3
+	set num_layers 1
 	set rnn_size 128
 	set gpu 0 
 	set seq_len 64

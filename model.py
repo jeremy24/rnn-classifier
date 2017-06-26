@@ -32,13 +32,14 @@ class Model():
 
 			if not self.is_training:
 				print("Using the inference helper")
-				start_tokens = tf.fill([self.args.seq_length], self.args.seq_length)
-				end_token = 0
-				print("\tState token: ", start_tokens.shape)
-				print("\tEnd token: ", end_token)
+				#start_tokens = tf.fill([self.args.seq_length], self.args.seq_length)
+				#end_token = 0
+				#print("\tState token: ", start_tokens.shape)
+				#print("\tEnd token: ", end_token)
 
 				# decoder_helper = s2s.GreedyEmbeddingHelper(embedding,
 				# start_tokens, end_token)
+				
 				seq_lens = tf.fill([self.args.batch_size], self.args.seq_length)
 				embedded_inputs = tf.nn.embedding_lookup(self.embedding,
 														 tf.to_int32(self.input_data))
@@ -64,43 +65,49 @@ class Model():
 		with tf.device("/gpu:0"):
 			args = self.args
 			print("\nHanging GPU variables")
-			all_shape = [self.num_batches, args.batch_size, args.seq_length]
+#			all_shape = [self.num_batches, args.batch_size, args.seq_length]
 			batch_shape = [args.batch_size, args.seq_length]
 			
-			print("\tall_shape: ", all_shape)
+#			print("\tall_shape: ", all_shape)
 			print("\tbatch_shape: ", batch_shape)
 			
 
 			#all_s = tf.placeholder(self.gpu_type, [self.num_batches, args.batch_size, args.seq_length])
 
-			print("\tsetting all input")
-			self.all_input_data = tf.Variable(tf.zeros(all_shape, dtype=self.gpu_type),
-											dtype=self.gpu_type, trainable=False,
-											name="all_inputs")
 
-			print("\tsetting all targets")
-			self.all_target_data = tf.Variable(tf.zeros(all_shape, dtype=self.gpu_type),
-											dtype=self.gpu_type, trainable=False,
-											name="all_targets")
+#			print("\tsetting all input")
+#			self.all_input_data = tf.Variable(tf.zeros(all_shape, dtype=self.gpu_type),
+#											dtype=self.gpu_type, trainable=False,
+#											name="all_inputs")
+
+#			print("\tsetting all targets")
+#			self.all_target_data = tf.Variable(tf.zeros(all_shape, dtype=self.gpu_type),
+#											dtype=self.gpu_type, trainable=False,
+#											name="all_targets")
 			
 			
 			self.step = tf.Variable(0, dtype=self.gpu_type, trainable=False, name="step")
 
 			# data for each step
-			self.input_data = tf.Variable(tf.zeros(batch_shape, dtype=self.gpu_type),
-										dtype=self.gpu_type, name="batch_input",
-										trainable=False)
+			#self.input_data = tf.Variable(tf.zeros(batch_shape, dtype=self.gpu_type),
+			#							dtype=self.gpu_type, name="batch_input",
+			#							trainable=False)
+			self.input_data = tf.placeholder(self.gpu_type, shape=batch_shape)
+
+			
 			#self.input_data = tf.get_variable("batch_input", [None, None], dtype=self.gpu_type,
 			#		trainable=False)
 
-			self.targets = tf.Variable(tf.zeros(batch_shape, dtype=self.gpu_type),
-									dtype=self.gpu_type, name="batch_targets",
-									trainable=False)
+			#self.targets = tf.Variable(tf.zeros(batch_shape, dtype=self.gpu_type),
+			#						dtype=self.gpu_type, name="batch_targets",
+			#						trainable=False)
 			
-			self.step = tf.Variable(0, dtype=self.gpu_type, trainable=False, name="step")
+			self.targets = tf.placeholder(self.gpu_type, shape=batch_shape)
 
-			with tf.name_scope("inc_step"):
-				self.inc_step = tf.assign_add(self.step, 1.0, name="inc_step")
+#			self.step = tf.Variable(0, dtype=self.gpu_type, trainable=False, name="step")
+
+#			with tf.name_scope("inc_step"):
+#				self.inc_step = tf.assign_add(self.step, 1.0, name="inc_step")
 
 			# grab the batch data for the current step
 			#with tf.name_scope("grab_step_data"):
@@ -161,18 +168,24 @@ class Model():
 		cells.append(last)
 		return cells
 
+	def build_one_layer(self):
+		cell = self.cell_fn(self.args.rnn_size)
+		return [cell]
+
 	def build_cells(self):
 		"""
 		Build some RNN cells
 		:return: a list of cells
 		"""
+		if self.args.num_layers == 1:
+			ret = self.build_one_layer()
 		# only working number of layers right now
 		if self.args.num_layers == 3:
 			ret = self.build_three_layers()
 		print("Done building cells")
 		return ret
 
-	def __init__(self, args, num_batches, training=True):
+	def __init__(self, args, num_batches=None, training=True):
 		""" init """
 		# self.args = args
 		
@@ -208,7 +221,7 @@ class Model():
 			self.cell = rnn.MultiRNNCell(cells, state_is_tuple=True)
 			cell = self.cell
 
-		print("Setting self.initial_state")
+		print("Setting self.initial_state based on batch size: ", self.args.batch_size)
 		self.initial_state = cell.zero_state(self.args.batch_size, self.gpu_type)
 		
 		print("Setting self.num_batches")
@@ -354,47 +367,76 @@ class Model():
 		prediction = None
 
 		print("Kicking off the predictions...")
-		for n in range(num):
-			try:
-				if n % 25  == 0:
-					print("N =", n)
-				
-				x = np.zeros((1, 1))
-				x[0, 0] = vocab[char]
-				#print("x:", x)
-				#x = tf.pad(2, 
-				feed = {self.input_data: x, self.initial_state: state}
-				
-				# Probs shape => [ batch_size, seq_length, vocab_size ]
-				probs = sess.run(self.probs, feed)
-
-				#probs = probs[0]
-				
+		for n in range(num):		
+			x = np.zeros((1, 1))
+			x[0, 0] = vocab[char] 
+			feed = {self.input_data: x, self.initial_state: state}
 			
-				#print("Before: ", probs.shape)
+			# Probs shape => [ batch_size, seq_length, vocab_size ]
+			[probs, state] = sess.run([self.probs, self.final_state], feed)
+			p = probs[0]
+			
+			#print(p)
+	
+			idx = np.argmax(p)
+			print(idx)
+			
+			#char = chars[idx]
+			#ret += char
+			pred = chars[idx]
+			ret += pred
+			char = pred
+
+			# we only care about the first one
+			#print("Pred: ", pred_idxs)
+
 				
-				probs = probs[0]
-				#print("\nProbs: ")
-				#print("\t", len(probs))
-				#print("\t", probs.shape)
-				#print(probs)
-				
-				
 
-				pred_idxs = sess.run(tf.argmax(probs, axis=1))
+			#char = chars[prediction_idx]
+			#ret += char
+			#return ret
+		return ret
 
+	def old_sample(self, sess, chars, vocab, num=200, prime='The ', sampling_type=0):
+		
+		state = sess.run(self.cell.zero_state(1, tf.float32))
+		print("got initial zero state")
+		print("Sampling type: ", sampling_type)
 
-				# we only care about the first one
-				#print("Pred: ", pred_idxs)
+		for char in prime[:-1]:
+			x = np.zeros((1, 1))
+			x[0, 0] = vocab[char]
+			feed = {self.input_data: x, self.initial_state: state}
+			[state] = sess.run([self.final_state], feed)
+		
+		print("Primed")
 
-				for pred in pred_idxs:
-					char = chars[pred]
-					ret += char
+		def weighted_pick(weights):
+			t = np.cumsum(weights)
+			s = np.sum(weights)
+			return(int(np.searchsorted(t, np.random.rand(1)*s)))
 
-				#char = chars[prediction_idx]
-				#ret += char
-				#return ret
-			except Exception as ex:
-				print(ex)
+		ret = prime
+		char = prime[-1]
+		print("Starting")
+		for n in range(num):
+			x = np.zeros((1, 1))
+			x[0, 0] = vocab[char]
+			feed = {self.input_data: x, self.initial_state: state}
+			[probs, state] = sess.run([self.probs, self.final_state], feed)
+			p = probs[0]
 
+			if sampling_type == 0:
+				sample = np.argmax(p)
+			elif sampling_type == 2:
+				if char == ' ':
+					sample = weighted_pick(p)
+				else:
+					sample = np.argmax(p)
+			else:  # sampling_type == 1 default:
+				sample = weighted_pick(p)
+
+			pred = chars[sample]
+			ret += pred
+			char = pred
 		return ret
