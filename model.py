@@ -70,8 +70,8 @@ class Model(object):
 			print("\tbatch_shape: ", batch_shape)						
 			
 			self.step = tf.Variable(0, dtype=self.gpu_type, trainable=False, name="step")
-			self.input_data = tf.placeholder(self.gpu_type, shape=batch_shape)
-			self.targets = tf.placeholder(self.gpu_type, shape=batch_shape)
+			self.input_data = tf.placeholder(self.gpu_type, shape=batch_shape, name="input_data")
+			self.targets = tf.placeholder(self.gpu_type, shape=batch_shape, name="targets")
 
 	def build_three_layers(self, use_highway=True):
 		"""
@@ -173,6 +173,7 @@ class Model(object):
 		self.lr = tf.Variable(0.0, trainable=False, name="lr")
 
 		print("Cell type is: ", args.model)
+		print("Batch size is: ", args.batch_size)
 
 		self.cell_fn = rnn.LSTMCell
 
