@@ -65,56 +65,13 @@ class Model():
 		with tf.device("/gpu:0"):
 			args = self.args
 			print("\nHanging GPU variables")
-#			all_shape = [self.num_batches, args.batch_size, args.seq_length]
 			batch_shape = [args.batch_size, args.seq_length]
 			
-#			print("\tall_shape: ", all_shape)
-			print("\tbatch_shape: ", batch_shape)
-			
-
-			#all_s = tf.placeholder(self.gpu_type, [self.num_batches, args.batch_size, args.seq_length])
-
-
-#			print("\tsetting all input")
-#			self.all_input_data = tf.Variable(tf.zeros(all_shape, dtype=self.gpu_type),
-#											dtype=self.gpu_type, trainable=False,
-#											name="all_inputs")
-
-#			print("\tsetting all targets")
-#			self.all_target_data = tf.Variable(tf.zeros(all_shape, dtype=self.gpu_type),
-#											dtype=self.gpu_type, trainable=False,
-#											name="all_targets")
-			
+			print("\tbatch_shape: ", batch_shape)						
 			
 			self.step = tf.Variable(0, dtype=self.gpu_type, trainable=False, name="step")
-
-			# data for each step
-			#self.input_data = tf.Variable(tf.zeros(batch_shape, dtype=self.gpu_type),
-			#							dtype=self.gpu_type, name="batch_input",
-			#							trainable=False)
 			self.input_data = tf.placeholder(self.gpu_type, shape=batch_shape)
-
-			
-			#self.input_data = tf.get_variable("batch_input", [None, None], dtype=self.gpu_type,
-			#		trainable=False)
-
-			#self.targets = tf.Variable(tf.zeros(batch_shape, dtype=self.gpu_type),
-			#						dtype=self.gpu_type, name="batch_targets",
-			#						trainable=False)
-			
 			self.targets = tf.placeholder(self.gpu_type, shape=batch_shape)
-
-#			self.step = tf.Variable(0, dtype=self.gpu_type, trainable=False, name="step")
-
-#			with tf.name_scope("inc_step"):
-#				self.inc_step = tf.assign_add(self.step, 1.0, name="inc_step")
-
-			# grab the batch data for the current step
-			#with tf.name_scope("grab_step_data"):
-			#	index = tf.to_int32(self.step, name="step_to_int")
-
-			#	self.input_data = tf.assign(self.input_data, self.all_input_data[index])
-			#	self.targets = tf.assign(self.targets, self.all_target_data[index])
 
 	def build_three_layers(self, use_highway=True):
 		"""
