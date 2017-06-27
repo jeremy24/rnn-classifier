@@ -14,7 +14,6 @@ from model import Model
 import numpy as np
 
 import tensorflow as tf
-from tensorflow.python.client import timeline
 
 os.environ["LD_LIBRARY_PATH"] = "/usr/local/cuda/extras/CUPTI/lib64/"
 
@@ -31,7 +30,7 @@ def dump_args(args):
 			fout.write(json.dumps(data, sort_keys=True, indent=4, separators=(",", ":")))
 			fout.close()
 	except Exception as ex:
-		print("Unable to save args to file: ", ex.message)
+		print("Unable to save args to file: ", ex)
 		exit(1)
 
 
@@ -98,10 +97,12 @@ def dump_data(data_loader, args):
 
 
 def to_gb(num_bytes):
-	return round( num_bytes / math.pow(2, 30), 3)
+	return round(num_bytes / math.pow(2, 30), 3)
+
 
 def to_mb(num_bytes):
-	return round( num_bytes / math.pow(2, 20), 3)
+	return round(num_bytes / math.pow(2, 20), 3)
+
 
 def train(args):
 	data_loader = TextLoader(args.data_dir, args.batch_size, args.seq_length)
@@ -152,10 +153,10 @@ def train(args):
 
 	# used if you want a lot of logging
 	sess_config = tf.ConfigProto()
-	
+
 	# used to watch gpu memory thats actually used
 	sess_config.gpu_options.allow_growth = True
-	
+
 	# used to show where things are being placed
 	sess_config.log_device_placement = False
 
@@ -168,7 +169,7 @@ def train(args):
 	args.data["avg_time_per_step"] = list()
 	args.data["logged_time"] = list()
 
-	with tf.Session( config = sess_config) as sess:
+	with tf.Session(config=sess_config) as sess:
 		# instrument for tensorboard
 		summaries = tf.summary.merge_all()
 		writer = tf.summary.FileWriter(
@@ -184,12 +185,12 @@ def train(args):
 
 		print("Starting...")
 		print("Have {} epochs and {} batches per epoch"
-				.format(args.num_epochs, data_loader.num_batches))
+			.format(args.num_epochs, data_loader.num_batches))
 		total_time = 0.0
 		# run_meta = tf.RunMetadata()
 
 		data_loader.reset_batch_pointer()
-		
+
 		print("Total size of batch data: ", to_gb(data_loader.batches.nbytes), "GB")
 
 		for epoch in range(args.num_epochs):
@@ -202,52 +203,20 @@ def train(args):
 
 			start = time.time()
 
-			#print("Copying over data for epoch")
-
-			#x_batches = list()
-			#y_batches = list()
-
-			#print("Breaking out the shuffled batches")
-			#for i in range(len(data_loader.batches)):
-			#	x_batches.append(data_loader.batches[i][0])
-			#	y_batches.append(data_loader.batches[i][1])
-
-			#print("Copying over all data")
-			#x_batches = np.array(x_batches, dtype=np.float32)
-			#y_batches = np.array(y_batches, dtype=np.float32)
-			#try:	
-				#print("x_batches shape: ", x_batches.shape)			
-				#sess.run(tf.assign(model.all_input_data, x_batches))
-				#print("x_batches copied")
-				#sess.run(tf.assign(model.all_target_data, y_batches))
-				#print("y_batches copied")
-				#sess.run(tf.assign(model.step, 0))
-				
-
-
-				#print("Step copied")
-			#except ValueError as valEr:
-			#	print("Error copying over data: ", valEr)
-			#	exit(1)
-
-			#print("Successfully copied over the data for epoch {}".format(epoch))
-			
-
-
 			for batch in range(data_loader.num_batches):
 				step = epoch * data_loader.num_batches + batch
 
 				x, y = data_loader.next_batch()
-				#ops = [ tf.assign(model.input_data, x), tf.assign(model.targets, y) ]
-				#sess.run(ops)
+				# ops = [ tf.assign(model.input_data, x), tf.assign(model.targets, y) ]
+				# sess.run(ops)
 
-				feed = { model.input_data:x, model.targets: y }
+				feed = {model.input_data: x, model.targets: y}
 
 				# if printing
 				if step % print_cycle == 0 and step > 0:
-					summary, train_loss, state, _ = sess.run([summaries, model.cost, 
-						model.final_state, model.train_op], feed)
-					
+					summary, train_loss, state, _ = sess.run([summaries, model.cost,
+															model.final_state, model.train_op], feed)
+
 					writer.add_summary(summary, step)
 					end = time.time()
 
@@ -256,7 +225,7 @@ def train(args):
 					steps_left = total_steps - step
 					print("{}/{} (epoch {}), train_loss: {:.3f}, time/{}: {:.3f} time/step = {:.3f}  time left: {:.2f}m"
 						.format(step, total_steps, epoch, train_loss, print_cycle,
-						end - start, avg_time_per, steps_left * avg_time_per / 60))
+								end - start, avg_time_per, steps_left * avg_time_per / 60))
 
 					start = time.time()
 
@@ -268,9 +237,10 @@ def train(args):
 				else:  # else normal training
 					train_loss, state, _ = sess.run(
 						[model.cost, model.final_state, model.train_op], feed)
-					last_batch = batch == data_loader.num_batches - 1
+
+				last_batch = batch == data_loader.num_batches - 1
 				last_epoch = epoch == args.num_epochs - 1
-				
+
 				if step % args.save_every == 0 or (last_batch and last_epoch):
 					# save for the last result
 					checkpoint_path = os.path.join(args.save_dir, 'model.ckpt')
@@ -286,7 +256,7 @@ def train(args):
 						"time": int(time.time() - global_start)
 					}
 				# increment the model step
-				#sess.run(model.inc_step)
+				# sess.run(model.inc_step)
 
 
 if __name__ == '__main__':

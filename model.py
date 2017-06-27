@@ -9,14 +9,14 @@ import numpy as np
 """Build a RNN model """
 
 
-class Model():
+class Model(object):
 	""" The RNN model """
 
 	def add_dropout(self, cells, in_prob=1.0, out_prob=1.0):
 		""" add dropout wrappers to cell[s], recursive """
 		if type(cells) is not list:
 			return rnn.DropoutWrapper(cells, input_keep_prob=in_prob,
-									  output_keep_prob=out_prob)
+									output_keep_prob=out_prob)
 		else:
 			ret = [self.add_dropout(cell, in_prob, out_prob) for cell in cells]
 			return ret
@@ -31,18 +31,12 @@ class Model():
 			print("\nBuilding decoder helper")
 
 			if not self.is_training:
+				# if not training we still setup the training helper so the data i
+				# is passed through, but we manually decode it first
 				print("Using the inference helper")
-				#start_tokens = tf.fill([self.args.seq_length], self.args.seq_length)
-				#end_token = 0
-				#print("\tState token: ", start_tokens.shape)
-				#print("\tEnd token: ", end_token)
-
-				# decoder_helper = s2s.GreedyEmbeddingHelper(embedding,
-				# start_tokens, end_token)
-				
 				seq_lens = tf.fill([self.args.batch_size], self.args.seq_length)
 				embedded_inputs = tf.nn.embedding_lookup(self.embedding,
-														 tf.to_int32(self.input_data))
+														tf.to_int32(self.input_data))
 				decoder_helper = s2s.TrainingHelper(embedded_inputs, seq_lens)
 			else:
 				print("Using the training helper:")
@@ -94,7 +88,7 @@ class Model():
 			print("\tChanged RNN size to: ", self.args.rnn_size)
 
 		print("\tOuter size: {}  Middle size: {}".format(outer_size,
-														 middle_size))
+														middle_size))
 
 		# set up intersection stuff
 		highway = tf.contrib.rnn.HighwayWrapper
@@ -134,11 +128,16 @@ class Model():
 		Build some RNN cells
 		:return: a list of cells
 		"""
+		ret = []
+
 		if self.args.num_layers == 1:
 			ret = self.build_one_layer()
 		# only working number of layers right now
 		if self.args.num_layers == 3:
 			ret = self.build_three_layers()
+		else:
+			print("Do not have a routine to make {} layers".format(self.args.num_layers))
+			exit(1)
 		print("Done building cells")
 		return ret
 
@@ -150,15 +149,15 @@ class Model():
 			print("\nNot training:")
 			print("\tPrev batch size: ", args.batch_size)
 			print("\tPrex seq length: ", args.seq_length)
-			#args.batch_size = 1
-			#args.seq_length = 1
+			# we now leave setting these args up the to calling prgm
+			# args.batch_size = 1
+			# args.seq_length = 1
 
 		self.args = args
 		self.args.orig_batch_size = self.args.batch_size
-		#self.args.batch_size = None
-		#args.batch_size = None
-		
 
+		# the type of all variables through the system.
+		# must be a float
 		self.gpu_type = tf.float32
 		self.is_training = training
 		self.seq_length = self.args.seq_length
@@ -192,15 +191,13 @@ class Model():
 		self.inc_step = None
 		self.input_data = None
 		self.targets = None
-		
 
 		print("Calling hang_gpu_variables")
 		# assign values to the above variables
 		self.hang_gpu_variables()
 
-
-		#self.batch = tf.train.batch(self.all_input_data, self.args.batch_size, name="input_batch_queue")
-		#print("\nBatch size from tf.batch: ", self.batch.shape)
+		# self.batch = tf.train.batch(self.all_input_data, self.args.batch_size, name="input_batch_queue")
+		# print("\nBatch size from tf.batch: ", self.batch.shape)
 
 		# this maps vectors of len vocab_size => vectors of size rnn_size
 		with tf.name_scope("get_embedding"):
@@ -238,10 +235,8 @@ class Model():
 		# TODO rewite to be able to predict N number of seqs at once
 		if not self.is_training:
 			with tf.name_scope("predict_index"):
-				preds = self.probs
-
 				# set predict to the right series of operations
-				self.predict = tf.squeeze(preds)  
+				self.predict = tf.squeeze(self.probs)
 				
 		# make into [ batch_size, seq_len, vocab_size ]
 		# it should already be this size, but this forces tf to recognize
@@ -280,13 +275,11 @@ class Model():
 					print("Hanging grad histogram for: ", variables[i].name)
 					tf.summary.histogram(variables[i].name, gradients[i])
 
-
-		print("\ntrainable_variables:" )
+		print("\ntrainable_variables:")
 		for var in tf.trainable_variables():
 			print("\t", var)
 
-
-		# instrument tensorboard
+		# values for tensorboard
 		# some nice logging
 		tf.summary.scalar("max_loss", tf.reduce_max(self.loss))
 		tf.summary.scalar("min_loss", tf.reduce_min(self.loss))
@@ -299,9 +292,6 @@ class Model():
 		tf.summary.histogram('logits', self.logits)
 		tf.summary.histogram('loss', self.loss)
 		tf.summary.scalar('train_loss', self.cost)
-
-
-	
 
 	def sample(self, sess, chars, vocab, num=200, prime='The '):
 		print("In sample")
@@ -319,9 +309,6 @@ class Model():
 		# loop variables
 		ret = prime
 		char = prime[-1]
-		hardmax = None
-		prediction_idx = None
-		prediction = None
 
 		print("Kicking off the predictions...")
 		for n in range(num):		
@@ -332,26 +319,13 @@ class Model():
 			# Probs shape => [ batch_size, seq_length, vocab_size ]
 			[probs, state] = sess.run([self.probs, self.final_state], feed)
 			p = probs[0]
-			
-			#print(p)
-	
+
 			idx = np.argmax(p)
 			print(idx)
-			
-			#char = chars[idx]
-			#ret += char
+
 			pred = chars[idx]
 			ret += pred
 			char = pred
-
-			# we only care about the first one
-			#print("Pred: ", pred_idxs)
-
-				
-
-			#char = chars[prediction_idx]
-			#ret += char
-			#return ret
 		return ret
 
 	def old_sample(self, sess, chars, vocab, num=200, prime='The ', sampling_type=0):
@@ -371,7 +345,7 @@ class Model():
 		def weighted_pick(weights):
 			t = np.cumsum(weights)
 			s = np.sum(weights)
-			return(int(np.searchsorted(t, np.random.rand(1)*s)))
+			return int(np.searchsorted(t, np.random.rand(1)*s))
 
 		ret = prime
 		char = prime[-1]
@@ -393,7 +367,7 @@ class Model():
 			else:  # sampling_type == 1 default:
 				sample = weighted_pick(p)
 
-			pred = chars[sample]
-			ret += pred
-			char = pred
+			prediction = chars[sample]
+			ret += prediction
+			char = prediction
 		return ret
