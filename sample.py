@@ -66,7 +66,8 @@ def sample(args):
 			print("Restoring...")
 			saver.restore(sess, ckpt.model_checkpoint_path)
 			print("Restored checkpoint successfully")
-			stuff = model.old_sample(sess, chars, vocab, args.n, args.prime).encode("utf-8")
+			stuff = model.old_sample(sess, chars, vocab, args.n, 
+					args.prime, args.sample).encode("utf-8")
 			print("BEGIN RESULT")
 			print(stuff)
 			print("END RESULT")
