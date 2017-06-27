@@ -7,26 +7,28 @@ import numpy as np
 
 
 class TextLoader():
-	def __init__(self, data_dir, batch_size, seq_length, encoding='utf-8'):
+	def __init__(self, data_dir, save_dir, batch_size, seq_length, encoding='utf-8'):
 		self.data_dir = data_dir
 		self.batch_size = batch_size
 		self.seq_length = seq_length
 		self.encoding = encoding
 
 		input_file = os.path.join(data_dir, "input.txt")
-		vocab_file = os.path.join(data_dir, "vocab.pkl")
-		tensor_file = os.path.join(data_dir, "data.npy")
+		vocab_file = os.path.join(save_dir, "vocab.pkl")
+		tensor_file = os.path.join(save_dir, "data.npy")
+		train_file = os.path.join(save_dir, "train_batches.npy")
+		test_file = os.path.join(save_dir, "test_batches.npy")
+
 
 		if not (os.path.exists(vocab_file) and os.path.exists(tensor_file)):
-			print("reading text file")
-			self.preprocess(input_file, vocab_file, tensor_file)
+			print("Preprocessing data")
+			self.preprocess(input_file, vocab_file, tensor_file, train_file, test_file)
 		else:
 			print("loading preprocessed files")
-			self.load_preprocessed(vocab_file, tensor_file)
-		self.create_batches()
+			self.load_preprocessed(vocab_file, tensor_file, train_file, test_file)
 		self.reset_batch_pointer()
 
-	def preprocess(self, input_file, vocab_file, tensor_file, todo=10000000):
+	def preprocess(self, input_file, vocab_file, tensor_file, train_file, test_file, todo=10000000):
 		with codecs.open(input_file, "r", encoding=self.encoding) as f:
 			data = f.read()
 		
@@ -60,8 +62,9 @@ class TextLoader():
 		
 		print("Saving tensor file...")
 		np.save(tensor_file, self.tensor)
-
-	def load_preprocessed(self, vocab_file, tensor_file):
+		self.create_batches(train_file, test_file)
+	
+	def load_preprocessed(self, vocab_file, tensor_file, train_file, test_file):
 		with open(vocab_file, 'rb') as f:
 			self.chars = cPickle.load(f)
 		self.vocab_size = len(self.chars)
@@ -71,11 +74,13 @@ class TextLoader():
 		print("Tensor loaded")
 		self.num_batches = int(self.tensor.size / (self.batch_size *
 												   self.seq_length))
-	
+		self.batches = np.load(train_file)
+		self.test_batches = np.load(test_file)
+		
 	def to_gb(self, num):
 		return round( num / math.pow(2, 30), 3)
 
-	def create_batches(self):
+	def create_batches(self, train_file, test_file):
 		self.num_batches = int(self.tensor.size / (self.batch_size *
 												   self.seq_length))
 
@@ -111,6 +116,9 @@ class TextLoader():
 		self.test_batches = self.batches[:test_size]
 		self.batches = self.batches[test_size:]
 		self.num_batches = len(self.batches)
+
+		np.save(train_file, self.batches)
+		np.save(test_file, self.test_batches)
 
 		print("Batches: {}	Test Batches:  {}"
 			.format(len(self.batches), len(self.test_batches)))

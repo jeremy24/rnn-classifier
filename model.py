@@ -347,3 +347,5 @@ class Model(object):
 			ret += prediction
 			char = prediction
 		return ret
+
+

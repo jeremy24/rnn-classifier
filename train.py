@@ -108,7 +108,7 @@ def to_mb(num_bytes):
 
 
 def train(args):
-	data_loader = TextLoader(args.data_dir, args.batch_size, args.seq_length)
+	data_loader = TextLoader(args.data_dir, args.save_dir, args.batch_size, args.seq_length)
 	args.vocab_size = data_loader.vocab_size
 
 	print("Vocab size: ", args.vocab_size)
@@ -234,13 +234,13 @@ def train(args):
 				# if printing
 				if step % print_cycle == 0 and step > 0:
 					summary, train_loss, state, _ = sess.run([summaries, model.cost,
-						model.final_state, model.orflowrain_op], feed_dict=feed,
+						model.final_state, model.train_op], feed_dict=feed,
 						options=run_options, run_metadata=run_meta)
 					
 					trace = timeline.Timeline(step_stats=run_meta.step_stats)
 					
 					trace_path = os.path.join(args.save_dir, "step_" + str(step) + ".ctf.json")
-					with open(trace_path, "w")  as t_file:
+					with open(trace_path, "w")	as t_file:
 							t_file.write(trace.generate_chrome_trace_format())
 
 					writer.add_summary(summary, step)

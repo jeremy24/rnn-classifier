@@ -21,7 +21,7 @@ if test (count $argv) > 0
 	set rnn_size 128
 	set gpu 0 
 	set seq_len 64
-	set num_epochs 3
+	set num_epochs 1
 	set save_every 512
 	set data_dir .
 	set log_dir $dir"/logs"
