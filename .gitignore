@@ -7,7 +7,8 @@ __pycache__/
 *.so
 
 
-
+saved_models/
+saved_models
 models/
 models
 *.txt
