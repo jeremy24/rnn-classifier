@@ -1,6 +1,7 @@
 import codecs
 import os
 import collections
+import math
 from six.moves import cPickle
 import numpy as np
 
@@ -65,9 +66,14 @@ class TextLoader():
 			self.chars = cPickle.load(f)
 		self.vocab_size = len(self.chars)
 		self.vocab = dict(zip(self.chars, range(len(self.chars))))
+		print("Loading in preprocessed tensor file...")
 		self.tensor = np.load(tensor_file)
+		print("Tensor loaded")
 		self.num_batches = int(self.tensor.size / (self.batch_size *
 												   self.seq_length))
+	
+	def to_gb(self, num):
+		return round( num / math.pow(2, 30), 3)
 
 	def create_batches(self):
 		self.num_batches = int(self.tensor.size / (self.batch_size *
@@ -77,6 +83,8 @@ class TextLoader():
 		# let's give them a better error message
 		if self.num_batches == 0:
 			assert False, "Not enough data. Make seq_length and batch_size small."
+
+		print("Total self.tensor size: ", self.to_gb(self.tensor.nbytes), "GB")
 
 		self.tensor = self.tensor[:self.num_batches * self.batch_size * self.seq_length]
 		xdata = self.tensor

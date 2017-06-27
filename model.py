@@ -1,8 +1,14 @@
+from __future__ import absolute_import
 from __future__ import print_function
+from __future__ import division
+
+
 
 import tensorflow as tf
+
 from tensorflow.contrib import rnn
 from tensorflow.contrib import seq2seq as s2s
+
 
 import numpy as np
 
@@ -129,11 +135,13 @@ class Model(object):
 		:return: a list of cells
 		"""
 		ret = []
+		
+		print("Building {} layers".format(self.args.num_layers))
 
 		if self.args.num_layers == 1:
 			ret = self.build_one_layer()
 		# only working number of layers right now
-		if self.args.num_layers == 3:
+		elif self.args.num_layers == 3:
 			ret = self.build_three_layers()
 		else:
 			print("Do not have a routine to make {} layers".format(self.args.num_layers))
@@ -293,46 +301,14 @@ class Model(object):
 		tf.summary.histogram('loss', self.loss)
 		tf.summary.scalar('train_loss', self.cost)
 
-	def sample(self, sess, chars, vocab, num=200, prime='The '):
-		print("In sample")
 
-		state = sess.run(self.cell.zero_state(1, tf.float32))
-		print("Set state")
-		for char in prime[:-1]:
-			x = np.zeros((1, 1))
-			x[0, 0] = vocab[char]
-			feed = {self.input_data: x, self.initial_state: state}
-			[state] = sess.run([self.final_state], feed)
-
-		print("Primed the network")
-
-		# loop variables
-		ret = prime
-		char = prime[-1]
-
-		print("Kicking off the predictions...")
-		for n in range(num):		
-			x = np.zeros((1, 1))
-			x[0, 0] = vocab[char] 
-			feed = {self.input_data: x, self.initial_state: state}
-			
-			# Probs shape => [ batch_size, seq_length, vocab_size ]
-			[probs, state] = sess.run([self.probs, self.final_state], feed)
-			p = probs[0]
-
-			idx = np.argmax(p)
-			print(idx)
-
-			pred = chars[idx]
-			ret += pred
-			char = pred
-		return ret
-
-	def old_sample(self, sess, chars, vocab, num=200, prime='The ', sampling_type=0):
+	def sample(self, sess, chars, vocab, num=200, prime='The ', sampling_type=0):
 		
 		state = sess.run(self.cell.zero_state(1, tf.float32))
 		print("got initial zero state")
+			
 		print("Sampling type: ", sampling_type)
+		print("Primer: ", prime)
 
 		for char in prime[:-1]:
 			x = np.zeros((1, 1))

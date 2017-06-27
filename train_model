@@ -2,6 +2,11 @@
 
 
 
+# set the lib path to enable tracing
+set -g -x	LD_LIBRARY_PATH /usr/local/cuda/extras/CUPTI/lib64:$LD_LIBRARY_PATH
+
+
+
 
 
 if test (count $argv) > 0
@@ -13,14 +18,14 @@ if test (count $argv) > 0
 	set out_prob 0.8
 	set in_prob 0.8
 	set num_layers 1
-	set rnn_size 256
+	set rnn_size 128
 	set gpu 0 
-	set seq_len 256
+	set seq_len 64
 	set num_epochs 3
 	set save_every 512
 	set data_dir .
 	set log_dir $dir"/logs"
-	set batch_size 300
+	set batch_size 100
 	set max_grad 5
 	set decay_rate 0.97
 	set model "lstm"

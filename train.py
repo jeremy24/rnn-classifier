@@ -15,6 +15,8 @@ import numpy as np
 
 import tensorflow as tf
 
+from tensorflow.python.client import timeline
+
 os.environ["LD_LIBRARY_PATH"] = "/usr/local/cuda/extras/CUPTI/lib64/"
 
 
@@ -82,6 +84,7 @@ def main():
 	dump_args(args)
 
 	os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu
+	os.environ["LD_LIBRARY_PATH"] = "/usr/local/cuda/extra/CUPTI/lib64/"
 
 	train(args)
 
@@ -160,6 +163,20 @@ def train(args):
 	# used to show where things are being placed
 	sess_config.log_device_placement = False
 
+	jit_level = 0
+	jit_level = tf.OptimizerOptions.ON_1
+
+	sess_config.graph_options.optimizer_options.global_jit_level = jit_level
+
+	run_options = tf.RunOptions()
+	run_options.trace_level = tf.RunOptions.FULL_TRACE
+
+
+
+
+
+	run_meta = tf.RunMetadata()
+
 	# set up some data capture lists
 	global_start = time.time()
 
@@ -192,11 +209,13 @@ def train(args):
 		data_loader.reset_batch_pointer()
 
 		print("Total size of batch data: ", to_gb(data_loader.batches.nbytes), "GB")
+		
+		trace = None
 
 		for epoch in range(args.num_epochs):
 			sess.run(tf.assign(model.lr,
 							args.learning_rate * (args.decay_rate ** epoch)))
-
+			
 			print("Resetting batch pointer for epoch: ", epoch)
 			data_loader.reset_batch_pointer()
 			# state = sess.run(model.initial_state)
@@ -215,7 +234,14 @@ def train(args):
 				# if printing
 				if step % print_cycle == 0 and step > 0:
 					summary, train_loss, state, _ = sess.run([summaries, model.cost,
-															model.final_state, model.train_op], feed)
+						model.final_state, model.orflowrain_op], feed_dict=feed,
+						options=run_options, run_metadata=run_meta)
+					
+					trace = timeline.Timeline(step_stats=run_meta.step_stats)
+					
+					trace_path = os.path.join(args.save_dir, "step_" + str(step) + ".ctf.json")
+					with open(trace_path, "w")  as t_file:
+							t_file.write(trace.generate_chrome_trace_format())
 
 					writer.add_summary(summary, step)
 					end = time.time()
@@ -243,6 +269,11 @@ def train(args):
 
 				if step % args.save_every == 0 or (last_batch and last_epoch):
 					# save for the last result
+					
+					if trace:
+						with open(os.path.join(args.save_dir, "step_" + str(step) + ".ctf.json"), "w") as t_file:
+							t_file.write(trace.generate_chrome_trace_format())
+
 					checkpoint_path = os.path.join(args.save_dir, 'model.ckpt')
 					saver.save(sess, checkpoint_path, global_step=step)
 					dump_args(args)
