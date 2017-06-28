@@ -1,18 +1,24 @@
+""" test a tensorflow model """
+
 from __future__ import print_function
-import tensorflow as tf
+from __future__ import division
+from __future__ import absolute_import
 
 import argparse
 import os
 from six.moves import cPickle
 
-from model import Model
-
-from six import text_type
-from utils import TextLoader
 
 import numpy as np
+import tensorflow as tf
+
+# my stuff
+from model import Model
+from utils import TextLoader
+
 
 def main():
+	"""main stuff"""
 	parser = argparse.ArgumentParser(
 					   formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 	parser.add_argument('--save_dir', type=str, default='save',
@@ -24,66 +30,65 @@ def main():
 							 'each timestep, 2 to sample on spaces')
 
 	args = parser.parse_args()
-	sample(args)
+	test(args)
 
 
 
 
 
-def run_test(sess, model, batch, state):
-	
+def run_test(sess, model, x_seq, y_seq, state):
+	""" run a test for a single batch """
 	# both are => [ batch_size, seq_length ]
-	x_seq = batch[0]
-	y_seq = batch[1]
+	# x_seq = batch[0]
+	# y_seq = batch[1]
 
 	
 	try:
 		#print("x_seq shape: ", x_seq.shape, "y_seq shape: ", y_seq.shape)
 		
-		feed = { model.input_data: x_seq, model.initial_state: state }
-		probs, state = sess.run([model.probs, model.final_state], feed)
+		feed = { model.input_data: x_seq, model.targets: y_seq,  model.initial_state: state }
+		probs, state = sess.run([model.probs, model.final_state, model.cost], feed)
 		
 		y_seq_ = probs
 	
 		#print("y_seq_ shape: ", y_seq_.shape)
 
-		y_ = list()
+		y_bar = list()
 
 		for item in y_seq_:
-			a = list()
+			sublist = list()
 			for sub in item:
-				a.append(np.argmax(sub))
-			y_.append(a)
+				sublist.append(np.argmax(sub))
+			y_bar.append(sublist)
 
-		y_ = np.array(y_)
-		
-		#print("y_ shape: ", y_.shape)
-		
-		correct = np.equal(y_seq, y_)
-		accuracy = np.mean(correct)
 
-		return accuracy, state
+		y_bar = np.array(y_bar)
+		accuracy = np.mean(np.equal(y_seq, y_bar))
+
+		return accuracy, state, loss
 
 	except Exception as ex:
 		print("run_test: ", ex)
 		exit(1)
 
-def sample(args):
-	with open(os.path.join(args.save_dir, 'config.pkl'), 'rb') as f:
-		saved_args = cPickle.load(f)
-	with open(os.path.join(args.save_dir, 'chars_vocab.pkl'), 'rb') as f:
-		chars, vocab = cPickle.load(f)
+def test(args):
+	""" run the tests """
+	saved_args = None
+	data_loader = None
+	model = None
 
-	
+	with open(os.path.join(args.save_dir, 'config.pkl'), 'rb') as fin:
+		saved_args = cPickle.load(fin)
 
-	# saved_args.batch_size = 1
-	# saved_args.seq_length = 1
 
 	print("Saved args: ", saved_args)
 
 	data_loader = TextLoader(saved_args.data_dir, saved_args.save_dir, saved_args.batch_size, 
 			saved_args.seq_length)
-	
+
+	data_loader.batches = data_loader.test_batches
+	data_loader.num_batches = len(data_loader.batches)
+
 	print("Data loaded in")
 
 	args.vocab_size = data_loader.vocab_size
@@ -95,7 +100,14 @@ def sample(args):
 
 	os.environ["CUDA_VISIBLE_DEVICES"]="0"
 
-	tests_to_run = args.n
+	
+	def t_print(stuff):
+		"""pretty print stats from a list"""
+		print("\tAvg:", np.mean(stuff))
+		print("\tMax:", np.max(stuff))
+		print("\tMin", np.min(stuff))
+		print("\tStd:", np.std(stuff))
+	
 
 	with tf.Session() as sess:
 		tf.global_variables_initializer().run()
@@ -111,37 +123,35 @@ def sample(args):
 			print("Restored checkpoint successfully")
 			
 			
-			
-			i = 0
 			state = sess.run(model.cell.zero_state(saved_args.batch_size, tf.float32))
 			
 			print("\ngot initial state")
-
-			batches = data_loader.batches
-
 			print("\nGrabbed batches")
+			print("Running", args.n, "test batches")
 			
-			total_accuracy = 0.0
+			losses = list()	
+			accs = list()
+			i = 0
 
-			print("Running", tests_to_run, "test batches")
-
-			for batch in batches:
-				if i == tests_to_run:
+			for batch in data_loader.batches:
+				if i == args.n: # number to run
 					break
 				# batch => [2]	   [x, y] pairs of data where
 				# x and y are => [ batch_size, seq_length ]
 				if i % 100 == 0:
 					print("On batch:", i)
-				accuracy, _ = run_test(sess, model, batch, state)
-				total_accuracy += accuracy
-				state = sess.run(model.cell.zero_state(saved_args.batch_size, tf.float32))
+				accuracy, _, loss = run_test(sess, model, batch[0], batch[1], state)
+				
+				losses.append(loss)
+				accs.append(accuracy)
 				i += 1
 
-			total_accuracy = total_accuracy / i
-			total_accuracy = round(total_accuracy, 4) * 100.0
-
-			print("Accuracy: {}% over {} batches".format(total_accuracy, i))
-					
+			print("\nFor {} batches".format(i))
+			print("Accuracy:")
+			t_print(accs)
+			
+			print("Loss:")
+			t_print(losses)
 
 if __name__ == '__main__':
 	main()

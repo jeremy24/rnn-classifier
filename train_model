@@ -16,40 +16,53 @@ if test (count $argv) > 0
 	set dir $argv[1]
 	
 	set num_tests 200
-	set print_cycle 10
-	set lr .05
+	set print_cycle 128
+	set lr .005
 	set out_prob 0.8
 	set in_prob 0.8
-	set num_layers 3
+	set num_layers 1
 	set rnn_size 128
 	set gpu 0 
-	set seq_len 128
+	set seq_len 256
 	set num_epochs 1
 	set save_every 512
 	set data_dir .
 	set log_dir $dir"/logs"
-	set batch_size 50
+	set batch_size 100
 	set max_grad 5
 	set decay_rate 0.97
 	set model "lstm"
 
 	echo "Making directories..."
 
-	if test (count $argv) = 2
-		set do_delete $argv[2]
-		if [ $do_delete = "true" ]
-			echo "Deleting the save dir first.."
-			rm -rf $save_dir
-			rm -rf $log_dir
-			rm -rf $dir
+	set do_delete 0
+	set do_test 0
+
+	for arg in $argv
+		switch "$arg" 
+			case --delete
+				set do_delete 1
+			case --test 
+				set do_test 1
 		end
+	end	
+
+	if [ $do_delete = 1 ]
+		echo "Deleting the save dir first"
+		rm -rf $save_dir $log_dir $dir
 	end
+
+	#if test (count $argv) = 2
+	#	set do_delete $argv[2]
+	#	if [ $do_delete = "true" ]
+	#		echo "Deleting the save dir first.."
+	#		rm -rf $save_dir
+	#		rm -rf $log_dir
+	#		rm -rf $dir
+	#	end
+	#end
 	
 
-	if test (count $argv) = 3
-		set $print_cycle $argv[3]
-	end
-	
 	set save_dir $dir"/save"
 
 	mkdir -p $dir $save_dir $log_dir
@@ -61,7 +74,10 @@ if test (count $argv) > 0
 
 	#python test.py --save_dir=$save_dir -n $num_tests
 
-
+	if [ $do_test = 1 ]
+		echo "Testing..."
+		python test.py --save_dir=$save_dir -n $num_tests
+	end
 	
 else
 	echo "Please provide a directory for the model data."

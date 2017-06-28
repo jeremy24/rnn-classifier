@@ -187,7 +187,7 @@ class Model(object):
 		print("\nSetting self.lr = {:.5}".format(args.learning_rate))
 
 		# self.lr = tf.Variable(args.learning_rate, name="lr", dtype=tf.float32)
-		self.lr = tf.Variable(args.learning_rate, name="lr", dtype=tf.float32)
+		self.lr = tf.Variable(args.learning_rate, name="lr", dtype=tf.float32, trainable=False)
 	
 
 		print("Cell type is: ", args.model)
