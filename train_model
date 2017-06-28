@@ -8,7 +8,7 @@ set -g -x	LD_LIBRARY_PATH /usr/local/cuda/extras/CUPTI/lib64:$LD_LIBRARY_PATH
 # set the path to use tcmalloc instead
 set -g -x LD_PRELOAD /usr/lib/libtcmalloc.so
 
-
+set -g -x  CUDA_VISIBLE_DEVICES "0"
 
 
 if test (count $argv) > 0
@@ -24,7 +24,7 @@ if test (count $argv) > 0
 	set rnn_size 128
 	set gpu 0 
 	set seq_len 256
-	set num_epochs 1
+	set num_epochs 25
 	set save_every 512
 	set data_dir .
 	set log_dir $dir"/logs"

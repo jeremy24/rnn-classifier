@@ -47,7 +47,7 @@ def run_test(sess, model, x_seq, y_seq, state):
 		#print("x_seq shape: ", x_seq.shape, "y_seq shape: ", y_seq.shape)
 		
 		feed = { model.input_data: x_seq, model.targets: y_seq,  model.initial_state: state }
-		probs, state = sess.run([model.probs, model.final_state, model.cost], feed)
+		probs, state, loss = sess.run([model.probs, model.final_state, model.cost], feed)
 		
 		y_seq_ = probs
 	
@@ -103,10 +103,10 @@ def test(args):
 	
 	def t_print(stuff):
 		"""pretty print stats from a list"""
-		print("\tAvg:", np.mean(stuff))
-		print("\tMax:", np.max(stuff))
-		print("\tMin", np.min(stuff))
-		print("\tStd:", np.std(stuff))
+		print("\tAvg: {:.3f}".format(np.mean(stuff)))
+		print("\tMax: {:.3f}".format(np.max(stuff)))
+		print("\tMin: {:.3f}".format(np.min(stuff)))
+		print("\tStd: {:.3f}".format(np.std(stuff)))
 	
 
 	with tf.Session() as sess:
@@ -145,7 +145,7 @@ def test(args):
 				losses.append(loss)
 				accs.append(accuracy)
 				i += 1
-
+			
 			print("\nFor {} batches".format(i))
 			print("Accuracy:")
 			t_print(accs)

@@ -79,6 +79,8 @@ class TextLoader():
 		with open(vocab_file, 'wb') as f:
 			cPickle.dump(self.chars, f)
 		
+		print("Shuffling the raw data", np.random.shuffle(self.tensor))
+
 		print("Saving tensor file...")
 		np.save(tensor_file, self.tensor)
 		self.create_batches(train_file, test_file)
