@@ -108,8 +108,15 @@ def to_mb(num_bytes):
 
 
 def train(args):
-	data_loader = TextLoader(args.data_dir, args.save_dir, args.batch_size, args.seq_length)
+	one_mil = 1000000
+	
+	todo = 10 * one_mil
+	
+
+	data_loader = TextLoader(args.data_dir, args.save_dir, args.batch_size, args.seq_length, todo=todo)
+	
 	args.vocab_size = data_loader.vocab_size
+	args.batch_size = data_loader.batch_size
 
 	print("Vocab size: ", args.vocab_size)
 
@@ -138,6 +145,10 @@ def train(args):
 			saved_chars, saved_vocab = cPickle.load(f)
 		assert saved_chars == data_loader.chars, "Data and loaded model disagree on character set!"
 		assert saved_vocab == data_loader.vocab, "Data and loaded model disagree on dictionary mappings!"
+
+
+	args.rnn_size = abs( (data_loader.vocab_size + args.seq_length) // 2)
+	print("Changed rnn size to be the avg of the in and out layers: ", args.rnn_size)
 
 	dump_data(data_loader, args)
 
@@ -211,10 +222,12 @@ def train(args):
 		print("Total size of batch data: ", to_gb(data_loader.batches.nbytes), "GB")
 		
 		trace = None
+	
+	#	sess.run(tf.assign(model.lr, args.learning_rate))
 
 		for epoch in range(args.num_epochs):
-			sess.run(tf.assign(model.lr,
-							args.learning_rate * (args.decay_rate ** epoch)))
+			# sess.run(tf.assign(model.lr,
+			#				args.learning_rate * (args.decay_rate ** epoch)))
 			
 			print("Resetting batch pointer for epoch: ", epoch)
 			data_loader.reset_batch_pointer()
@@ -233,8 +246,8 @@ def train(args):
 
 				# if printing
 				if step % print_cycle == 0 and step > 0:
-					summary, train_loss, state, _ = sess.run([summaries, model.cost,
-						model.final_state, model.train_op], feed_dict=feed,
+					summary, train_loss, state, _, lr, g_step = sess.run([summaries, model.cost,
+						model.final_state, model.train_op, model.lr_decay, model.global_step], feed_dict=feed,
 						options=run_options, run_metadata=run_meta)
 					
 					trace = timeline.Timeline(step_stats=run_meta.step_stats)
@@ -249,9 +262,9 @@ def train(args):
 					total_time += end - start
 					avg_time_per = round(total_time / step if step > 0 else step + 1, 2)
 					steps_left = total_steps - step
-					print("{}/{} (epoch {}), train_loss: {:.3f}, time/{}: {:.3f} time/step = {:.3f}  time left: {:.2f}m"
-						.format(step, total_steps, epoch, train_loss, print_cycle,
-								end - start, avg_time_per, steps_left * avg_time_per / 60))
+					print("{}/{} (epoch {}), train_loss: {:.3f}, lr: {:.5f}  time/{}: {:.3f} time/step = {:.3f}  time left: {:.2f}m g_step: {}"
+						.format(step, total_steps, epoch, train_loss, lr, print_cycle,
+								end - start, avg_time_per, steps_left * avg_time_per / 60, g_step))
 
 					start = time.time()
 
@@ -287,8 +300,9 @@ def train(args):
 						"time": int(time.time() - global_start)
 					}
 				# increment the model step
+				# model.inc_step()
 				# sess.run(model.inc_step)
-
+	
 
 if __name__ == '__main__':
 	main()

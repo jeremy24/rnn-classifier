@@ -2,9 +2,11 @@
 
 
 
-# set the lib path to enable tracing
+# set the lib path to enable tracing for cuda
 set -g -x	LD_LIBRARY_PATH /usr/local/cuda/extras/CUPTI/lib64:$LD_LIBRARY_PATH
 
+# set the path to use tcmalloc instead
+set -g -x LD_PRELOAD /usr/lib/libtcmalloc.so
 
 
 
@@ -13,19 +15,20 @@ if test (count $argv) > 0
 
 	set dir $argv[1]
 	
-	set print_cycle 128
+	set num_tests 200
+	set print_cycle 10
 	set lr .05
 	set out_prob 0.8
 	set in_prob 0.8
-	set num_layers 1
+	set num_layers 3
 	set rnn_size 128
 	set gpu 0 
-	set seq_len 64
+	set seq_len 128
 	set num_epochs 1
 	set save_every 512
 	set data_dir .
 	set log_dir $dir"/logs"
-	set batch_size 100
+	set batch_size 50
 	set max_grad 5
 	set decay_rate 0.97
 	set model "lstm"
@@ -55,6 +58,8 @@ if test (count $argv) > 0
 	
 	python train.py --model=$model --decay_rate=$decay_rate --grad_clip=$max_grad --batch_size=$batch_size --log_dir=$log_dir --data_dir=$data_dir --save_dir=$save_dir --print_cycle=$print_cycle --seq_length=$seq_len --num_epochs=$num_epochs --learning_rate=$lr --save_every=$save_every --output_keep_prob=$out_prob --input_keep_prob=$in_prob --num_layers=$num_layers --rnn_size=$rnn_size --gpu=$gpu
 
+
+	#python test.py --save_dir=$save_dir -n $num_tests
 
 
 	

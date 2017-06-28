@@ -1,13 +1,18 @@
+from __future__ import print_function
+from __future__ import division
+from __future__ import absolute_import
+
 import codecs
 import os
 import collections
 import math
+import itertools
 from six.moves import cPickle
 import numpy as np
 
 
 class TextLoader():
-	def __init__(self, data_dir, save_dir, batch_size, seq_length, encoding='utf-8'):
+	def __init__(self, data_dir, save_dir, batch_size, seq_length, encoding='utf-8', todo=1000000):
 		self.data_dir = data_dir
 		self.batch_size = batch_size
 		self.seq_length = seq_length
@@ -22,13 +27,19 @@ class TextLoader():
 
 		if not (os.path.exists(vocab_file) and os.path.exists(tensor_file)):
 			print("Preprocessing data")
-			self.preprocess(input_file, vocab_file, tensor_file, train_file, test_file)
+			self.preprocess(input_file, vocab_file, tensor_file, train_file, test_file, todo=todo)
 		else:
 			print("loading preprocessed files")
 			self.load_preprocessed(vocab_file, tensor_file, train_file, test_file)
 		self.reset_batch_pointer()
+	
+	#def preprocess_step(self, char):
+	#	if char not in self.vocab
 
-	def preprocess(self, input_file, vocab_file, tensor_file, train_file, test_file, todo=10000000):
+
+	def preprocess(self, input_file, vocab_file, 
+			tensor_file, train_file, test_file, todo=float("inf")):
+		
 		with codecs.open(input_file, "r", encoding=self.encoding) as f:
 			data = f.read()
 		
@@ -36,23 +47,31 @@ class TextLoader():
 		self.vocab = dict()
 		self.vocab_size = 0
 		
-		todo = len(data) if len(data) < todo else todo
+		min_percent = .05
+
+		if todo < len(data) * min_percent:
+			print("todo of {:,} is less than {}% of {:,}, changing..."
+					.format(todo, int(min_percent*100), len(data)))
+			
+			todo = len(data) * min_percent
+			todo = int(todo)
 
 		self.tensor = np.zeros(todo, dtype=np.uint16)
-		
-		idx = 0
+
+
 		i = 0
-		print("Processing {} items from data".format(todo))
+		print("Processing {:,} items from data".format(todo))
 		for x in data:
 			if i >= todo:
 				break
 			if x not in self.vocab:
-				self.vocab[x] = idx
+				# assign a new id to that char
+				self.vocab[x] = len(self.vocab) + 1
 				self.chars.append(x)
-				idx += 1
+				
 			self.tensor[i] = self.vocab[x]
 			i += 1
-		
+
 		self.vocab_size = len(self.vocab)
 		print("Processing done.  Vocab size:", self.vocab_size)
 		
@@ -81,15 +100,22 @@ class TextLoader():
 		return round( num / math.pow(2, 30), 3)
 
 	def create_batches(self, train_file, test_file):
+		# this was changed to be set in preprocess
 		self.num_batches = int(self.tensor.size / (self.batch_size *
 												   self.seq_length))
+		while self.num_batches > 5000:
+			self.batch_size += 5
+			self.num_batches = int(self.tensor.size / (self.batch_size * self.seq_length))
 
-		# When the data (tensor) is too small,
+		print("Batch size changed to {:,}  have {:,} batches".format(self.batch_size, self.num_batches))
+
+		# When the data (tensor)is too small,
 		# let's give them a better error message
 		if self.num_batches == 0:
 			assert False, "Not enough data. Make seq_length and batch_size small."
 
 		print("Total self.tensor size: ", self.to_gb(self.tensor.nbytes), "GB")
+
 
 		self.tensor = self.tensor[:self.num_batches * self.batch_size * self.seq_length]
 		xdata = self.tensor

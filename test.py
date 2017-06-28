@@ -16,11 +16,9 @@ def main():
 	parser = argparse.ArgumentParser(
 					   formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 	parser.add_argument('--save_dir', type=str, default='save',
-						help='model directory to store checkpointed models')
-	parser.add_argument('-n', type=int, default=500,
-						help='number of characters to sample')
-	parser.add_argument('--prime', type=text_type, default=u' ',
-						help='prime text')
+						help='model directory to load from')
+	parser.add_argument('-n', type=int, default=100,
+						help='number of test batches to sample')
 	parser.add_argument('--sample', type=int, default=1,
 						help='0 to use max at each timestep, 1 to sample at '
 							 'each timestep, 2 to sample on spaces')
@@ -97,7 +95,7 @@ def sample(args):
 
 	os.environ["CUDA_VISIBLE_DEVICES"]="0"
 
-	tests_to_run = 100
+	tests_to_run = args.n
 
 	with tf.Session() as sess:
 		tf.global_variables_initializer().run()
@@ -130,7 +128,7 @@ def sample(args):
 			for batch in batches:
 				if i == tests_to_run:
 					break
-				# batch => [2]     [x, y] pairs of data where
+				# batch => [2]	   [x, y] pairs of data where
 				# x and y are => [ batch_size, seq_length ]
 				if i % 100 == 0:
 					print("On batch:", i)
@@ -139,8 +137,8 @@ def sample(args):
 				state = sess.run(model.cell.zero_state(saved_args.batch_size, tf.float32))
 				i += 1
 
-			total_accuracy = total_accuracy / 1
-			total_accuracy = round(total_accuracy, 4)
+			total_accuracy = total_accuracy / i
+			total_accuracy = round(total_accuracy, 4) * 100.0
 
 			print("Accuracy: {}% over {} batches".format(total_accuracy, i))
 					
