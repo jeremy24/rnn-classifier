@@ -262,7 +262,7 @@ def train(args):
 					total_time += end - start
 					avg_time_per = round(total_time / step if step > 0 else step + 1, 2)
 					steps_left = total_steps - step
-					print("{}/{} (epoch {}), train_loss: {:.3f}, lr: {:.5f}  time/{}: {:.3f} time/step = {:.3f}  time left: {:.2f}m g_step: {}"
+					print("{}/{} (epoch {}), train_loss: {:.3f}, lr: {:.4f}  time/{}: {:.3f} time/step = {:.3f}  time left: {:.2f}m g_step: {}"
 						.format(step, total_steps, epoch, train_loss, lr, print_cycle,
 								end - start, avg_time_per, steps_left * avg_time_per / 60, g_step))
 

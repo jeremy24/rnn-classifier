@@ -6,12 +6,18 @@ import codecs
 import os
 import collections
 import math
+import time
 import itertools
+import multiprocessing as multi
+# from multiprocessing import Process, RawValue, Lock
+from multiprocessing.dummy import Pool as ThreadPool
 from six.moves import cPickle
 import numpy as np
 
 
-class TextLoader():
+
+
+class TextLoader(object):
 	def __init__(self, data_dir, save_dir, batch_size, seq_length, encoding='utf-8', todo=1000000):
 		self.data_dir = data_dir
 		self.batch_size = batch_size
@@ -47,7 +53,7 @@ class TextLoader():
 		self.vocab = dict()
 		self.vocab_size = 0
 		
-		min_percent = .05
+		min_percent = .25
 
 		if todo < len(data) * min_percent:
 			print("todo of {:,} is less than {}% of {:,}, changing..."
@@ -56,29 +62,66 @@ class TextLoader():
 			todo = len(data) * min_percent
 			todo = int(todo)
 
-		self.tensor = np.zeros(todo, dtype=np.uint16)
+		# self.tensor = np.zeros(todo, dtype=np.uint16)
 
 
-		i = 0
-		print("Processing {:,} items from data".format(todo))
-		for x in data:
-			if i >= todo:
-				break
-			if x not in self.vocab:
-				# assign a new id to that char
-				self.vocab[x] = len(self.vocab) + 1
-				self.chars.append(x)
-				
-			self.tensor[i] = self.vocab[x]
-			i += 1
+		def preprocess_helper(seq):
+			ret = list()
+			for char in seq:
+				if char not in self.vocab:
+					self.vocab[char] = len(self.vocab) + 1
+					self.chars.append(char)
+				ret.append(self.vocab[char])
+			return ret
 
-		self.vocab_size = len(self.vocab)
-		print("Processing done.  Vocab size:", self.vocab_size)
+
+		print("Preprocessing {:,} items from data".format(todo))		
+	
+		# give each worker 10 mil to do, dont exceed num of cpus
+		calc_num = todo // 10000000
+		num_workers = calc_num if calc_num <= multi.cpu_count() else multi.cpu_count()
+
+		flatten = lambda l: [item for sublist in l for item in sublist]
+	
+		# to batch out the data
+		stride = todo // num_workers
 		
+		start = time.time()
+
+		seqs = list()
+		for x in range(num_workers):
+			seqs.append( data[x*stride : x + 1 * stride])
+		
+		print("seqs.length:", len(seqs))
+
+		# preproc the data
+		pool = ThreadPool(num_workers)
+		ret = pool.map(preprocess_helper, seqs)
+		
+		pool.close()
+		pool.join()
+
+		# drop any dupes
+		self.chars = list(set(self.chars))
+
+		# flatten the results
+		ret = flatten(ret) if type(ret[0]) is list else ret
+
+		# using uint 16 to save space and becasue we wont have more than 60k diff chars
+		self.tensor = np.array(ret, dtype=np.uint16)
+		
+		print("Took ", time.time() - start, "using {} workers".format(num_workers))
+			
+		self.vocab_size = len(self.vocab)
+		print("Processing took {:.3f} using {} workers, vocab size: {}"
+				.format(time.time()-start, num_workers, self.vocab_size))
+
 		print("Dumping vocab to file...")
 		with open(vocab_file, 'wb') as f:
 			cPickle.dump(self.chars, f)
-		
+
+		# this is to dilute any differences in the data at the 
+		# start and end, so that the model can generalize better
 		print("Shuffling the raw data", np.random.shuffle(self.tensor))
 
 		print("Saving tensor file...")

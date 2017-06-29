@@ -17,14 +17,14 @@ if test (count $argv) > 0
 	
 	set num_tests 200
 	set print_cycle 128
-	set lr .005
+	set lr .05
 	set out_prob 0.8
 	set in_prob 0.8
 	set num_layers 1
 	set rnn_size 128
 	set gpu 0 
-	set seq_len 256
-	set num_epochs 25
+	set seq_len 64
+	set num_epochs 1
 	set save_every 512
 	set data_dir .
 	set log_dir $dir"/logs"
