@@ -314,12 +314,12 @@ class Model(object):
 		self.train_op = tf.contrib.layers.optimize_loss(
 				loss=self.loss,
 				global_step=tf.contrib.framework.get_global_step(),
-				clip_gradients=None,
+				clip_gradients=self.args.grad_clip,
 				learning_rate_decay_fn=None,
 				name="optimize",
 				colocate_gradients_with_ops=True,
 				learning_rate=self.lr_decay,
-				optimizer="Adam")
+				optimizer="Adagrad")
 
 		# grads, t_vars = zip(*self.optimizer.compute_gradients(self.cost))
 		# grads, _ = tf.clip_by_global_norm(grads, self.args.grad_clip)

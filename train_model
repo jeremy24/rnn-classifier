@@ -16,21 +16,21 @@ if test (count $argv) > 0
 	set dir $argv[1]
 	
 	set num_tests 200
-	set print_cycle 128
-	set lr .05
+	set print_cycle 1000
+	set lr 1.0
 	set out_prob 0.8
 	set in_prob 0.8
-	set num_layers 1
-	set rnn_size 128
+	set num_layers 2
+	set rnn_size 500
 	set gpu 0 
-	set seq_len 64
+	set seq_len 35
 	set num_epochs 1
-	set save_every 512
+	set save_every 1000
 	set data_dir .
 	set log_dir $dir"/logs"
-	set batch_size 100
+	set batch_size 50
 	set max_grad 5
-	set decay_rate 0.97
+	set decay_rate .85
 	set model "lstm"
 
 	echo "Making directories..."

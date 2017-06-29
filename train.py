@@ -7,6 +7,7 @@ import os
 import json
 import threading
 import math
+import re
 from six.moves import cPickle
 
 from utils import TextLoader
@@ -110,11 +111,35 @@ def to_mb(num_bytes):
 def train(args):
 	one_mil = 1000000
 	
-	todo = 10 * one_mil
+	todo = 1 * one_mil
 	
+	def labeler(seq):
+		a = "".join(seq)
+		a = str(a)
+		exp = r"([0-9]+.?[0-9]+%)+"
+		matches = re.findall(exp, a)
+		repl = chr(1)
+		# print(a)
+		# print("repl:", repl)
+		# print(matches)
+		for match in matches:
+			# print("len: ", len(match), "	[{}]".format(len(match)*repl))
+			a = a.replace(match, repl * len(match))
+		# print(a)
+		ret = np.zeros(len(a), np.uint8)
+		for i in range(len(a)):
+			if a[i] == repl:
+				ret[i] = 1 
+		return ret
 
-	data_loader = TextLoader(args.data_dir, args.save_dir, args.batch_size, args.seq_length, todo=todo)
 	
+	# print(m)
+	# exit(1)
+
+	data_loader = TextLoader(args.data_dir, args.save_dir, 
+			args.batch_size, args.seq_length, todo=todo, 
+			labeler_fn=labeler, label_seq=True)
+
 	args.vocab_size = data_loader.vocab_size
 	args.batch_size = data_loader.batch_size
 
@@ -147,8 +172,29 @@ def train(args):
 		assert saved_vocab == data_loader.vocab, "Data and loaded model disagree on dictionary mappings!"
 
 
-	args.rnn_size = abs( (data_loader.vocab_size + args.seq_length) // 2)
-	print("Changed rnn size to be the avg of the in and out layers: ", args.rnn_size)
+	# args.rnn_size = abs( (data_loader.vocab_size + args.seq_length) // 2)
+	# print("Changed rnn size to be the avg of the in and out layers: ", args.rnn_size)
+	# print("In layer: {}  Out layer: {}".format(args.seq_length, data_loader.vocab_size))
+
+
+	def hidden_size(num_in, num_out):
+		upper = num_out if num_out > num_in else num_in
+		lower = num_in if num_in < num_out else num_out
+
+		upper = upper if 2 * num_in < upper else 2 * num_in
+		
+		mid = (2/3) * num_in + num_out
+		
+		print("\n upper: {:.1f}   mid: {:.1f}	lower: {:.1f}:".format(upper, mid, lower))
+
+		if mid < upper and mid > lower:
+			return int(mid)
+		return int(upper + lower) // 2
+
+
+	# args.rnn_size = hidden_size(args.seq_length, data_loader.vocab_size)
+
+	print("Changed rnn size to:", args.rnn_size)
 
 	dump_data(data_loader, args)
 
@@ -196,6 +242,12 @@ def train(args):
 	args.data["losses"] = list()
 	args.data["avg_time_per_step"] = list()
 	args.data["logged_time"] = list()
+
+	num_params = np.sum([np.prod(v.get_shape().as_list()) for v in tf.trainable_variables()])
+	
+	print("\nModel has {:,} trainable params".format(num_params))
+	print("Data has {:,} individual characters\n".format(data_loader.num_chars))
+	
 
 	with tf.Session(config=sess_config) as sess:
 		# instrument for tensorboard
