@@ -160,10 +160,42 @@ class Model(object):
 					.format(self.args.num_layers))
 		print("Done building cells")
 		return ret
+	
+	def confusion(self, logits, onehots):
+		is_label_one = tf.cast(onehots, dtype=tf.bool)
+		is_label_zero = tf.logical_not(is_label_one)
+
+		correct_pred = tf.nn.in_top_k(logits, onehots, 1, name="correct_answer")
+		false_pred = tf.logical_not(correct_pred)
+
+		tp = tf.reduce_sum(tf.to_int32(tf.logical_and(correct_pred, is_label_one)))
+		fp = tf.reduce_sum(tf.to_int32(tf.logical_and(false_pred, is_label_zero)))
+		tn = tf.reduce_sum(tf.to_int32(tf.logical_and(correct_pred, is_label_zero)))
+		fn = tf.reduce_sum(tf.to_int32(tf.logical_and(false_pred, is_label_one)))
+
+		precision = tp / (fp + tp)
+		recall = tp / (tp + fn)
+		accuracy = (tn + tp) / (tn + fp + fn + tp)
+		sensitivity = recall # same thing
+		specificity = tn / (tn + fp)
+
+		ret = {"tp": tp, "fp": fp, "tn": tn, "fn": fn}
+		ret["accuracy"] = accuracy
+		ret["state"] = state
+		ret["loss"] = loss
+		ret["precision"] = precision
+		ret["recall"] = recall
+		ret["sensitivity"] = sensitivity
+		ret["specificity"] = specificity
+		
+		return ret	
 
 	def __init__(self, args, num_batches=None, training=True):
 		""" init """
 		# self.args = args
+
+
+
 		
 		if not training:
 			print("\nNot training:")
@@ -203,8 +235,6 @@ class Model(object):
 		# self.cell_fn = rnn.GRUCell
 		# self.cell_fn = rnn.IntersectionRNNCell
 		# self.cell_fn = rnn.NASCell
-
-
 
 
 		with tf.name_scope("Cells"):
@@ -292,7 +322,10 @@ class Model(object):
 			#							loss_weights, name="compute_loss")
 
 			onehots = tf.one_hot(indices=tf.to_int32(self.targets), depth=self.args.vocab_size)
-			self.loss = tf.losses.softmax_cross_entropy(onehot_labels=onehots, logits=self.logits)
+			# self.loss = tf.losses.softmax_cross_entropy(onehot_labels=onehots, logits=self.logits)
+
+			confusion = self.confusion(self.logits, onehots)
+			self.loss = -confusion["precision"]
 
 
 		with tf.name_scope('cost'):

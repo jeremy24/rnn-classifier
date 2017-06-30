@@ -64,29 +64,46 @@ def run_test(sess, model, x_seq, y_seq, state):
 
 		y_bar = np.array(y_bar)
 		# accuracy = np.mean(np.equal(y_seq, y_bar))
-		
-		confusion = skmetrics.confusion_matrix(y_seq, y_bar)
+
+
+		try:		
+			y_seq = np.ndarray.flatten(y_seq)
+			y_bar = np.ndarray.flatten(y_bar)
+			confusion = skmetrics.confusion_matrix(y_seq, y_bar)
+		except ValueError as ex:
+			print("Error build confusion:", ex)
+			print(y_seq.shape)
+			print("labels y_bar:", set(y_bar))
+			print("labels y_seq:", set(y_seq))
+			exit(1)
 
 		tn = confusion[0,0]
 		fp = confusion[0,1]
-		fn = confision[1,0]
+		fn = confusion[1,0]
 		tp = confusion[1,1]
-		
+	
+
 		precision = tp / (fp + tp)
-		recall = tp / (tp+fp)
-		accuracy = (tn + tp) / tn + fp + fn + tp)
-		sensitivity = tp / (tp + fn)
-		specificity = tn / (tn_fp)
+		recall = tp / (tp+fn)
+		accuracy = (tn + tp) / (tn + fp + fn + tp)
+		sensitivity = recall # same thing
+		specificity = tn / (tn + fp)
+
+	
 
 		ret = dict()
 		ret["accuracy"] = accuracy
-		ret["state"] = state
+		# ret["state"] = state
 		ret["loss"] = loss
 		ret["precision"] = precision
 		ret["recall"] = recall
 		ret["sensitivity"] = sensitivity
 		ret["specificity"] = specificity
-		
+
+		print(tp, fp, tn, fn)
+		print(tp, "/", "(", fp, "+", tp, ")")
+		# print(ret)
+
 		return ret
 
 	except Exception as ex:
@@ -158,7 +175,7 @@ def test(args):
 			i = 0
 
 			for batch in data_loader.batches:
-				state = sess.run(model.cell_zero_state(saved_args.batch_size, tf.float32))
+				# state = sess.run(model.cell.zero_state(saved_args.batch_size, tf.float32))
 				if i == args.n: # number to run
 					break
 				# batch => [2]	   [x, y] pairs of data where
@@ -173,7 +190,7 @@ def test(args):
 				losses.append(metrics["loss"])
 				accs.append(metrics["accuracy"])
 				precs.append(metrics["precision"])
-				recalls.append(metrics["recalls"])
+				recalls.append(metrics["recall"])
 				i += 1
 			
 			print("\nFor {} batches".format(i))
