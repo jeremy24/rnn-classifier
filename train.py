@@ -123,11 +123,14 @@ def train(args):
 			a = str(a)
 			# exp = r"([0-9]+.?[0-9]+%)+" # find a percent
 			
-			exps =	[ r"( and )", r"( the )", r"( our )"]
+			words = ["and", "the", "our", "job", "of", "an"]
+			exps =	[ r"( and )", r"( the )", r"( our )", r"( job )", r"( of )", r"( an )"]
 			repl_char = chr(1)
 			repl = " " + repl_char * 3 + " "
 	
-			for exp in exps:
+			for i in range(len(exps)):
+				exp = exps[i]
+				repl = " " + len(words[i]) * repl_char + " "
 				a = re.sub(exp, repl, a)
 		
 			ret = np.zeros(len(a), dtype=np.uint8)
@@ -310,6 +313,8 @@ def train(args):
 						model.final_state, model.train_op, model.lr_decay, model.global_step], feed_dict=feed,
 						options=run_options, run_metadata=run_meta)
 					
+					confusion = sess.run(model.confusion, feed)
+		
 					trace = timeline.Timeline(step_stats=run_meta.step_stats)
 					
 					trace_path = os.path.join(args.save_dir, "step_" + str(step) + ".ctf.json")
@@ -325,7 +330,8 @@ def train(args):
 					print("{}/{} (epoch {}), train_loss: {:.5f}, lr: {:.6f}  time/{}: {:.3f} time/step = {:.3f}  time left: {:.2f}m g_step: {}"
 						.format(step, total_steps, epoch, train_loss, lr, print_cycle,
 								end - start, avg_time_per, steps_left * avg_time_per / 60, g_step))
-
+					print(confusion)
+								
 					start = time.time()
 
 					global_diff = time.time() - global_start

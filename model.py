@@ -161,17 +161,36 @@ class Model(object):
 		print("Done building cells")
 		return ret
 	
-	def confusion(self, logits, onehots):
-		is_label_one = tf.cast(onehots, dtype=tf.bool)
-		is_label_zero = tf.logical_not(is_label_one)
+	# this will only work for a binary	classification problem
+	def compute_confusion(self, logits, targets):
+		"""Get the confusion matric from the logits and targets"""
 
-		correct_pred = tf.nn.in_top_k(logits, onehots, 1, name="correct_answer")
+		# logits => [batch_size, seq_length, vocab_size/num classes]
+		# targets => [batch_size, seq_length]
+
+		# unroll the logits to [batch_size * seq_length, vocab_size]
+		# flatten targets to [ batch_size * seq_length ]
+		logits = tf.reshape(tf.to_float(logits), [-1, self.args.vocab_size])
+		targets = tf.reshape(tf.to_int32(targets), [-1])
+		
+		is_label_one = tf.cast(targets, dtype=tf.bool)
+		is_label_zero = tf.logical_not(is_label_one)
+	
+		try:
+			correct_pred = tf.nn.in_top_k(logits, targets, 1, name="correct_answer")
+		except ValueError as ex:
+			print("Unable to get correct pred:", ex)
+			exit(1)
 		false_pred = tf.logical_not(correct_pred)
 
-		tp = tf.reduce_sum(tf.to_int32(tf.logical_and(correct_pred, is_label_one)))
-		fp = tf.reduce_sum(tf.to_int32(tf.logical_and(false_pred, is_label_zero)))
-		tn = tf.reduce_sum(tf.to_int32(tf.logical_and(correct_pred, is_label_zero)))
-		fn = tf.reduce_sum(tf.to_int32(tf.logical_and(false_pred, is_label_one)))
+		try:
+			tp = tf.reduce_sum(tf.to_int32(tf.logical_and(correct_pred, is_label_one)))
+			fp = tf.reduce_sum(tf.to_int32(tf.logical_and(false_pred, is_label_zero)))
+			tn = tf.reduce_sum(tf.to_int32(tf.logical_and(correct_pred, is_label_zero)))
+			fn = tf.reduce_sum(tf.to_int32(tf.logical_and(false_pred, is_label_one)))
+		except ValueError as ex:
+			print("Unable to get part of the matrix: ", ex)
+			exit(1)
 
 		precision = tp / (fp + tp)
 		recall = tp / (tp + fn)
@@ -181,8 +200,6 @@ class Model(object):
 
 		ret = {"tp": tp, "fp": fp, "tn": tn, "fn": fn}
 		ret["accuracy"] = accuracy
-		ret["state"] = state
-		ret["loss"] = loss
 		ret["precision"] = precision
 		ret["recall"] = recall
 		ret["sensitivity"] = sensitivity
@@ -192,11 +209,7 @@ class Model(object):
 
 	def __init__(self, args, num_batches=None, training=True):
 		""" init """
-		# self.args = args
-
-
-
-		
+			
 		if not training:
 			print("\nNot training:")
 			print("\tPrev batch size: ", args.batch_size)
@@ -314,18 +327,23 @@ class Model(object):
 		# it should already be this size, but this forces tf to recognize
 		# the shape
 		logits_shape = [self.args.batch_size, self.args.seq_length, self.args.vocab_size]
-		split_logits = tf.reshape(self.logits, logits_shape)
+		self.logits = tf.reshape(self.logits, logits_shape)
 
 		with tf.name_scope("compute_loss"):
 			#loss_weights = tf.ones([self.args.batch_size, self.args.seq_length])
 			#self.loss = s2s.sequence_loss(split_logits, tf.to_int32(self.targets),
 			#							loss_weights, name="compute_loss")
 
-			onehots = tf.one_hot(indices=tf.to_int32(self.targets), depth=self.args.vocab_size)
-			# self.loss = tf.losses.softmax_cross_entropy(onehot_labels=onehots, logits=self.logits)
+			onehots = tf.one_hot(indices=tf.to_int32(self.targets), 
+					depth=self.args.vocab_size, dtype=tf.int32)
+			self.loss = tf.losses.softmax_cross_entropy(onehot_labels=onehots, logits=self.logits)
 
-			confusion = self.confusion(self.logits, onehots)
-			self.loss = -confusion["precision"]
+			print("Vocab size:", self.args.vocab_size)
+			print("logits shape: ", self.logits.shape)
+			print("Targets shape: ", self.targets.shape)
+
+			self.confusion = self.compute_confusion(self.logits, tf.to_int32(self.targets))
+			# self.loss = -self.confusion["precision"]
 
 
 		with tf.name_scope('cost'):

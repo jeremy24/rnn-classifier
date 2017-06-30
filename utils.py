@@ -82,7 +82,7 @@ class TextLoader(object ):
 		self.reverse_vocab = dict()
 		self.vocab_size = 0
 		
-		min_percent = .005
+		min_percent = .10
 
 		if todo < len(data) * min_percent:
 			print("todo of {:,} is less than {}% of {:,}, changing..."
@@ -210,6 +210,9 @@ class TextLoader(object ):
 		num_examples = self.num_batches * self.batch_size * self.seq_length
 
 
+		#xdata = self.tensor[:num_examples]
+		#ydata = self.labels[:num_examples]
+
 		xdata = self.tensor[:num_examples]
 		ydata = self.labels[:num_examples]
 
@@ -228,10 +231,13 @@ class TextLoader(object ):
 
 		assert len(ydata) == len(xdata)	
 
+
 		x_batches = np.split(xdata.reshape(self.batch_size, -1),
 								  self.num_batches, 1)
 		y_batches = np.split(ydata.reshape(self.batch_size, -1),
 								  self.num_batches, 1)
+		
+	
 		self.batches = list()
 		for i in range(len(y_batches)):
 			x, y = x_batches[i], y_batches[i]
