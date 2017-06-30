@@ -15,16 +15,16 @@ if test (count $argv) > 0
 
 	set dir $argv[1]
 	
-	set num_tests 200
+	set num_tests 2000
 	set print_cycle 1000
 	set lr 1.0
 	set out_prob 0.8
 	set in_prob 0.8
 	set num_layers 2
-	set rnn_size 500
+	set rnn_size 600
 	set gpu 0 
 	set seq_len 35
-	set num_epochs 1
+	set num_epochs 5
 	set save_every 1000
 	set data_dir .
 	set log_dir $dir"/logs"
@@ -71,6 +71,8 @@ if test (count $argv) > 0
 	
 	python train.py --model=$model --decay_rate=$decay_rate --grad_clip=$max_grad --batch_size=$batch_size --log_dir=$log_dir --data_dir=$data_dir --save_dir=$save_dir --print_cycle=$print_cycle --seq_length=$seq_len --num_epochs=$num_epochs --learning_rate=$lr --save_every=$save_every --output_keep_prob=$out_prob --input_keep_prob=$in_prob --num_layers=$num_layers --rnn_size=$rnn_size --gpu=$gpu
 
+
+	chmod 444 $save_dir
 
 	#python test.py --save_dir=$save_dir -n $num_tests
 

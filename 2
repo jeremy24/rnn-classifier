@@ -56,20 +56,20 @@ class TextLoader(object ):
 		self.reset_batch_pointer()
 	
 	def preprocess_helper(self, seq):
-		"""Take in ALL the x data and return {x: list, y: list}"""
-		encoded_seq = list()
+		chars = list()
 		labels = list()
 		for char in seq:
 			if char not in self.vocab:
 				self.vocab[char] = ord(char)
 				self.chars.append(char)
-			encoded_seq.append(self.vocab[char])
-		
-		labels = np.array(self.labeler_fn(seq), dtype=np.uint16)
-		encoded_seq = np.array(encoded_seq, dtype=np.uint16)
-		assert len(encoded_seq) == len(labels), "Lens don't match {} != {}".format(len(chars), len(labels))
+			chars.append(self.vocab[char])
+			if self.label_whole_chunk == False:
+				labels.append(self.labeler_fn(char))
+		if self.label_whole_chunk:
+			labels = self.labeler_fn(seq)
+		assert len(chars) == len(labels), "Lens don't match {} != {}".format(len(chars), len(labels))
 		labels = np.ndarray.flatten(np.array(labels))
-		return { "x": encoded_seq, "y": labels }
+		return { "x": chars, "y": labels }
 
 	def preprocess(self, input_file, vocab_file, 
 			tensor_file, train_file, test_file, todo=float("inf")):
@@ -82,7 +82,7 @@ class TextLoader(object ):
 		self.reverse_vocab = dict()
 		self.vocab_size = 0
 		
-		min_percent = .005
+		min_percent = .20
 
 		if todo < len(data) * min_percent:
 			print("todo of {:,} is less than {}% of {:,}, changing..."
@@ -92,15 +92,29 @@ class TextLoader(object ):
 			todo = int(todo)
 	
 
-		print("Preprocessing {:,} items from data".format(todo))				
+		print("Preprocessing {:,} items from data".format(todo))		
+		
 		print("Trimming data to length of todo")
-
 		data = data[:todo]
-		flatten = lambda l: [item for sublist in l for item in sublist]
-		start = time.time()
-		seqs = list(data)
 
+		# give each worker 10 mil to do, dont exceed num of cpus
+		# add one to avoid divide by zero
+		
+	
+
+		flatten = lambda l: [item for sublist in l for item in sublist]
+	
+	
+		start = time.time()
+		
+		# split the data into num_workers chunks
+		#str_chunks = [ data[i*stride:i+1*stride] for i in range(num_workers) ]
+
+		#print("Starting pool with {} workers and {:,} chunksize".format(num_workers, per_worker))
 		print("Data length: {:,}".format(len(data)))
+
+	
+		seqs = list(data)
 		print("Sequences converted to lists after: ", time.time()-start)
 	
 		# make sure its flat
@@ -112,41 +126,60 @@ class TextLoader(object ):
 		print("Starting preprocess {:,} items"
 				.format(len(seqs)))
 	
-		prepro_data = self.preprocess_helper(seqs)		
-		encoded = prepro_data["x"]
-		labels = prepro_data["y"]
+		print("Seqs length: ", len(seqs))
+		
+		# pass the entire chunk of x data to the provided labeler
+		labels = self.labeler_fn(seqs)
 
 		print("Labels generated in {:,.3f}".format(time.time()-pool_s))		
-		
+		print("len: ", len(labels), type(labels))
+
+		ret = np.array(data)
+		labels = np.array(labels, dtype=np.uint8)
+
+
 		# make a reverse vocab lookup dict
 		self.reverse_vocab = { v: k for k, v in self.vocab.items() }
 
+		#for key in self.vocab:
+		#	val = self.vocab[key]
+		#	self.reverse_vocab[val] = key
+		
 		# drop any dupes
 		self.chars = list(set(self.chars))
 
-		assert len(self.chars) == len(self.vocab.items())
-		assert len(encoded) == len(labels)
+		print("self.vocab type: ", type(self.vocab))
+	
+		assert len(self.chars) == len(self.vocab)
+		assert len(ret) == len(labels)
+
+		# flatten the results
+		# ret = flatten(ret) if type(ret[0]) is list else ret
+		# labels = flatten(labels) if type(labels[0]) is list else labels
 
 		# using uint 16 to save space and becasue we wont have more than 60k diff chars
-		
-		self.tensor = np.array(encoded, dtype=np.uint16)
-		self.labels = np.array(labels, dtype=np.uint16)
+		self.tensor = np.array(ret, dtype=np.uint16)
 
-		num_true_labels = np.sum(self.labels)
+		# to label the data
+		self.labels = np.array(labels, dtype=np.uint8)
 		
-		print("Have {:,} true labeled chars out of {:,}  {:.4f}%"
-				.format(num_true_labels, len(self.labels), 
-					num_true_labels / len(self.labels) * 100.0))
+		num_true_labels = np.sum(self.labels)
+		print("Have {} true labeled chars out of {}  {:.4f}%"
+				.format(num_true_labels, len(self.labels), num_true_labels / len(self.labels)))
+
+		print("Some labels: ", self.labels[:20])
 
 		assert len(self.labels) == len(self.tensor)
 
-		# total number of chars in sample
+		# print("Took ", time.time() - start, "using {} workers".format(num_workers))
+		
+		print("Tensor length: ", len(self.tensor))
+		
 		self.num_chars = len(self.tensor)
 
-		# this is an "alias" to the number of classes in the problem
-		self.vocab_size = len(set(self.labels))
-		print("Processing took {:.3f}  vocab size: {}"
-				.format(time.time()-start, self.vocab_size))
+		self.vocab_size = len(self.vocab)
+		print("Processing took {:.3f} using {} workers, vocab size: {}"
+				.format(time.time()-start, num_workers, self.vocab_size))
 		
 		print("Dumping vocab to file...")
 		with open(vocab_file, 'wb') as f:
@@ -154,6 +187,7 @@ class TextLoader(object ):
 
 		print("Saving tensor file...")
 		np.save(tensor_file, self.tensor)
+
 		self.create_batches(train_file, test_file)
 	
 	def load_preprocessed(self, vocab_file, tensor_file, train_file, test_file):
@@ -196,6 +230,9 @@ class TextLoader(object ):
 		# this was changed to be set in preprocess
 		self.num_batches = int(self.tensor.size / (self.batch_size *
 												   self.seq_length))
+		#while self.num_batches > 5000:
+		#	self.batch_size += 5
+		#	self.num_batches = int(self.tensor.size / (self.batch_size * self.seq_length))
 
 		print("Batch size changed to {:,}  have {:,} batches"
 				.format(self.batch_size, self.num_batches))
@@ -209,9 +246,11 @@ class TextLoader(object ):
 
 		num_examples = self.num_batches * self.batch_size * self.seq_length
 
+		self.tensor = self.tensor[:num_examples]
+		self.labels = self.labels[:num_examples]
 
-		xdata = self.tensor[:num_examples]
-		ydata = self.labels[:num_examples]
+		xdata = self.tensor
+		ydata = self.labels
 
 		assert len(ydata) == len(xdata), "Data lengths don't match: {} != {}".format(len(xdata), len(ydata))
 
@@ -220,6 +259,12 @@ class TextLoader(object ):
 		self.num_labels = self.vocab_size
 
 		print("\nHave {} different labels".format(self.vocab_size))
+		# scoot the data around so that x[0] is labeled by y[1]
+		# then realign the data so the lengths are right and chop the ends
+		#ydata[:-1] = xdata[1:]
+		#ydata[-1] = xdata[0]
+		
+		## need to slice the front off ys and the end of xs
 
 		# dont misalign the labels for now
 		# xdata = xdata[1:-2]

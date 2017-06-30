@@ -87,6 +87,8 @@ def main():
 	os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu
 	os.environ["LD_LIBRARY_PATH"] = "/usr/local/cuda/extra/CUPTI/lib64/"
 
+	print("Kicking off train call...")
+
 	train(args)
 
 
@@ -114,23 +116,28 @@ def train(args):
 	todo = 1 * one_mil
 	
 	def labeler(seq):
-		a = "".join(seq)
-		a = str(a)
-		exp = r"([0-9]+.?[0-9]+%)+"
-		matches = re.findall(exp, a)
-		repl = chr(1)
-		# print(a)
-		# print("repl:", repl)
-		# print(matches)
-		for match in matches:
-			# print("len: ", len(match), "	[{}]".format(len(match)*repl))
-			a = a.replace(match, repl * len(match))
-		# print(a)
-		ret = np.zeros(len(a), np.uint8)
-		for i in range(len(a)):
-			if a[i] == repl:
-				ret[i] = 1 
-		return ret
+		try:
+			print("\nLabeler:")
+			print("\tSeq length: {:,} ".format(len(seq)))
+			a = "".join(seq)
+			a = str(a)
+			# exp = r"([0-9]+.?[0-9]+%)+" # find a percent
+			
+			exps =	[ r"( and )", r"( the )", r"( our )"]
+			repl_char = chr(1)
+			repl = " " + repl_char * 3 + " "
+	
+			for exp in exps:
+				a = re.sub(exp, repl, a)
+		
+			ret = np.zeros(len(a), dtype=np.uint8)
+			for i in range(len(a)):
+				ret[i] = a[i] == repl_char
+			assert len(ret) == len(seq)
+			return ret
+		except ValueError as ex:
+			print("ValueError in labeler:", ex)
+			exit(1)
 
 	
 	# print(m)
@@ -138,7 +145,7 @@ def train(args):
 
 	data_loader = TextLoader(args.data_dir, args.save_dir, 
 			args.batch_size, args.seq_length, todo=todo, 
-			labeler_fn=labeler, label_seq=True)
+			labeler_fn=labeler)
 
 	args.vocab_size = data_loader.vocab_size
 	args.batch_size = data_loader.batch_size
@@ -228,10 +235,6 @@ def train(args):
 	run_options = tf.RunOptions()
 	run_options.trace_level = tf.RunOptions.FULL_TRACE
 
-
-
-
-
 	run_meta = tf.RunMetadata()
 
 	# set up some data capture lists
@@ -247,7 +250,7 @@ def train(args):
 	
 	print("\nModel has {:,} trainable params".format(num_params))
 	print("Data has {:,} individual characters\n".format(data_loader.num_chars))
-	
+
 
 	with tf.Session(config=sess_config) as sess:
 		# instrument for tensorboard
@@ -294,10 +297,15 @@ def train(args):
 				# ops = [ tf.assign(model.input_data, x), tf.assign(model.targets, y) ]
 				# sess.run(ops)
 
+
+
 				feed = {model.input_data: x, model.targets: y}
 
+				last_batch = batch == data_loader.num_batches - 1
+				last_epoch = epoch == args.num_epochs - 1
+
 				# if printing
-				if step % print_cycle == 0 and step > 0:
+				if step % print_cycle == 0 and step > 0 or (last_batch and last_epoch):
 					summary, train_loss, state, _, lr, g_step = sess.run([summaries, model.cost,
 						model.final_state, model.train_op, model.lr_decay, model.global_step], feed_dict=feed,
 						options=run_options, run_metadata=run_meta)
@@ -314,7 +322,7 @@ def train(args):
 					total_time += end - start
 					avg_time_per = round(total_time / step if step > 0 else step + 1, 2)
 					steps_left = total_steps - step
-					print("{}/{} (epoch {}), train_loss: {:.3f}, lr: {:.4f}  time/{}: {:.3f} time/step = {:.3f}  time left: {:.2f}m g_step: {}"
+					print("{}/{} (epoch {}), train_loss: {:.5f}, lr: {:.6f}  time/{}: {:.3f} time/step = {:.3f}  time left: {:.2f}m g_step: {}"
 						.format(step, total_steps, epoch, train_loss, lr, print_cycle,
 								end - start, avg_time_per, steps_left * avg_time_per / 60, g_step))
 
@@ -328,9 +336,6 @@ def train(args):
 				else:  # else normal training
 					train_loss, state, _ = sess.run(
 						[model.cost, model.final_state, model.train_op], feed)
-
-				last_batch = batch == data_loader.num_batches - 1
-				last_epoch = epoch == args.num_epochs - 1
 
 				if step % args.save_every == 0 or (last_batch and last_epoch):
 					# save for the last result

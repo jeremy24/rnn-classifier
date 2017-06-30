@@ -6,11 +6,12 @@ from __future__ import absolute_import
 
 import argparse
 import os
-from six.moves import cPickle
 
+from six.moves import cPickle
 
 import numpy as np
 import tensorflow as tf
+import sklearn.metrics as skmetrics
 
 # my stuff
 from model import Model
@@ -61,11 +62,32 @@ def run_test(sess, model, x_seq, y_seq, state):
 				sublist.append(np.argmax(sub))
 			y_bar.append(sublist)
 
-
 		y_bar = np.array(y_bar)
-		accuracy = np.mean(np.equal(y_seq, y_bar))
+		# accuracy = np.mean(np.equal(y_seq, y_bar))
+		
+		confusion = skmetrics.confusion_matrix(y_seq, y_bar)
 
-		return accuracy, state, loss
+		tn = confusion[0,0]
+		fp = confusion[0,1]
+		fn = confision[1,0]
+		tp = confusion[1,1]
+		
+		precision = tp / (fp + tp)
+		recall = tp / (tp+fp)
+		accuracy = (tn + tp) / tn + fp + fn + tp)
+		sensitivity = tp / (tp + fn)
+		specificity = tn / (tn_fp)
+
+		ret = dict()
+		ret["accuracy"] = accuracy
+		ret["state"] = state
+		ret["loss"] = loss
+		ret["precision"] = precision
+		ret["recall"] = recall
+		ret["sensitivity"] = sensitivity
+		ret["specificity"] = specificity
+		
+		return ret
 
 	except Exception as ex:
 		print("run_test: ", ex)
@@ -131,19 +153,27 @@ def test(args):
 			
 			losses = list()	
 			accs = list()
+			precs = list()
+			recalls = list()
 			i = 0
 
 			for batch in data_loader.batches:
+				state = sess.run(model.cell_zero_state(saved_args.batch_size, tf.float32))
 				if i == args.n: # number to run
 					break
 				# batch => [2]	   [x, y] pairs of data where
 				# x and y are => [ batch_size, seq_length ]
 				if i % 100 == 0:
 					print("On batch:", i)
-				accuracy, _, loss = run_test(sess, model, batch[0], batch[1], state)
+				#accuracy, _, loss = run_test(sess, model, batch[0], batch[1], state)
+				x = batch[0]
+				y = batch[1]
+				metrics = run_test(sess, model, x, y, state)
 				
-				losses.append(loss)
-				accs.append(accuracy)
+				losses.append(metrics["loss"])
+				accs.append(metrics["accuracy"])
+				precs.append(metrics["precision"])
+				recalls.append(metrics["recalls"])
 				i += 1
 			
 			print("\nFor {} batches".format(i))
@@ -152,6 +182,12 @@ def test(args):
 			
 			print("Loss:")
 			t_print(losses)
+			
+			print("Precision:")
+			t_print(precs)
+
+			print("Recall:")
+			t_print(recalls)
 
 if __name__ == '__main__':
 	main()
