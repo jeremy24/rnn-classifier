@@ -18,7 +18,7 @@ if  count $argv > /dev/null
 	set dir $argv[1]	
 	
 	set num_tests 2000
-	set print_cycle 50
+	set print_cycle 100
 	set lr 1.0
 	set out_prob 0.8
 	set in_prob 0.8
@@ -26,7 +26,7 @@ if  count $argv > /dev/null
 	set rnn_size 1200
 	set gpu 0 
 	set seq_len 35
-	set num_epochs 1
+	set num_epochs 150
 	set save_every 1000
 	set data_dir .
 	set log_dir $dir"/logs"

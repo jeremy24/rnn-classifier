@@ -8,16 +8,18 @@ import json
 import threading
 import math
 import re
+import gc
 from six.moves import cPickle
 
 from utils import TextLoader
 from model import Model
+from data_blob import Prepositions
 import numpy as np
+import objgraph
 
 import tensorflow as tf
 
 from tensorflow.python.client import timeline
-
 os.environ["LD_LIBRARY_PATH"] = "/usr/local/cuda/extras/CUPTI/lib64/"
 
 
@@ -25,7 +27,7 @@ def dump_args(args):
 	"""dump args to a file"""
 	try:
 		filename = os.path.join(args.save_dir, "hyper_params.json")
-		with open(filename, "w+") as fout:
+		with open(filename, "w") as fout:
 			data = dict()
 			args = vars(args)
 			for key in args:
@@ -102,6 +104,22 @@ def dump_data(data_loader, args):
 		cPickle.dump((data_loader.chars, data_loader.vocab), f)
 
 
+def pretty_print(item, step, total_steps, epoch, print_cycle, end, start, avg_time_per):
+	steps_left = total_steps - step
+	time_left = steps_left * avg_time_per / 60
+	str1 = "{}/{} (epoch {}), train_loss: {:.5f}, ".format(step, total_steps, epoch, item["train_loss"])
+	str2 = "lr: {:.6f}  time/{}: {:.3f}".format(item["lr"], print_cycle, end - start)
+	str3 = " time/step = {:.3f}  time left: {:.2f}m g_step: {}".format(avg_time_per, time_left, item["g_step"])
+	print(str1 + str2 + str3)
+
+
+def pretty_print_confusion(confusion):
+	print("Confusion:")
+	for key in confusion.keys():
+		print("\t{}: {:.5f}".format(key, confusion[key]))
+	print("\n")
+
+
 def to_gb(num_bytes):
 	return round(num_bytes / math.pow(2, 30), 3)
 
@@ -110,45 +128,158 @@ def to_mb(num_bytes):
 	return round(num_bytes / math.pow(2, 20), 3)
 
 
-def train(args):
-	one_mil = 1000000
-	
-	todo = 1 * one_mil
-	
-	def labeler(seq):
-		try:
-			print("\nLabeler:")
-			print("\tSeq length: {:,} ".format(len(seq)))
-			a = "".join(seq)
-			a = str(a)
-			# exp = r"([0-9]+.?[0-9]+%)+" # find a percent
-			
-			words = ["and", "the", "our", "job", "of", "an"]
-			exps =	[ r"( and )", r"( the )", r"( our )", r"( job )", r"( of )", r"( an )"]
-			repl_char = chr(1)
-			repl = " " + repl_char * 3 + " "
-	
-			for i in range(len(exps)):
-				exp = exps[i]
-				repl = " " + len(words[i]) * repl_char + " "
-				a = re.sub(exp, repl, a)
-		
-			ret = np.zeros(len(a), dtype=np.uint8)
-			for i in range(len(a)):
-				ret[i] = a[i] == repl_char
-			assert len(ret) == len(seq)
-			return ret
-		except ValueError as ex:
-			print("ValueError in labeler:", ex)
+def save_model(args, saver, sess, step):
+	checkpoint_path = os.path.join(args.save_dir, 'model.ckpt')
+	saver.save(sess, checkpoint_path, global_step=step)
+	dump_args(args)
+	print("model saved to {}".format(checkpoint_path))
+
+
+class Confusion(object):
+	def __init__(self, sess, model, feed):
+		self.sess = sess
+		self.model = model
+		self.feed = feed
+
+	def __enter__(self):
+		return self.sess.run(self.model.confusion, self.feed)
+
+	def __exit__(self, type, value, trace):
+		if value:
+			print("Confusion Error: {}\n{}\n{}".format(type, value, trace))
 			exit(1)
 
-	
-	# print(m)
-	# exit(1)
 
-	data_loader = TextLoader(args.data_dir, args.save_dir, 
-			args.batch_size, args.seq_length, todo=todo, 
-			labeler_fn=labeler)
+class NormalTrain(object):
+	def __init__(self, sess, model, feed):
+		self.sess = sess
+		self.feed = feed
+		self.args = [model.cost, model.final_state, model.train_op]
+
+	def __enter__(self):
+		cost, state, _ = self.sess.run(self.args, self.feed)
+		return None
+
+	def __exit__(self, type, value, trace):
+		if value:
+			print("NormalTrain Error: {}\n{}\n{}".format(type, value, trace))
+			exit(1)
+
+
+class PrintTrain(object):
+	def __init__(self, sess, model, summaries, feed):
+		self.sess = sess
+		self.feed = feed
+		self.args = [summaries, model.loss, model.final_state, model.train_op, model.lr_decay, model.global_step]
+
+	def __enter__(self):
+		summary, loss, state, _, lr, g_step = self.sess.run(self.args, feed_dict=self.feed)
+		return {"summary": summary, "train_loss": loss, "state": state, "lr": lr, "g_step": g_step}
+
+	def __exit__(self, type, value, trace):
+		if value:
+			print("PrintTrain Error: {}\n{}\n{}".format(type, value, trace))
+			exit(1)
+
+
+def hidden_size(num_in, num_out):
+	upper = num_out if num_out > num_in else num_in
+	lower = num_in if num_in < num_out else num_out
+	upper = upper if 2 * num_in < upper else 2 * num_in
+	mid = (2 / 3) * num_in + num_out
+	print("\n upper: {:.1f}   mid: {:.1f}	lower: {:.1f}:".format(upper, mid, lower))
+	if upper > mid > lower:
+		return int(mid)
+	return int(upper + lower) // 2
+
+
+def bucket_by_length(words):
+	"""Bucket a list of words based on their lengths"""
+	num_buckets = list(set([len(x) for x in words]))
+	buckets = dict()
+	for x in num_buckets:
+		buckets[x] = list()
+	for word in words:
+		buckets[len(word)].append(word)
+	return buckets
+
+
+# generate labels
+# first we bucket the words based on size and then mash them
+# all into one regex for speed
+# we have to do this in order to know the right number of replacement
+# chars to sub into the string
+def labeler(seq, words_to_use=5):
+	"""Generate labels for a given sequence"""
+	print("\nLabeler:")
+	print("\tSeq length: {:,} ".format(len(seq)))
+	a = seq
+	# words = Prepositions().len_between(0, 6)
+	# words = ["the", "of", "and", "in", "to", "a", "with", "for", "is"]
+	words = list()
+
+	# the word list is the top 10 most
+	# common words in the sequence
+	print("\tSplitting")
+	b = seq.split(" ")
+	wc = dict()
+	for x in b:
+		if x not in wc:
+			wc[x] = 0
+		wc[x] += 1
+
+
+	print("\nWords being used:")
+	for w in sorted(wc, key=wc.get, reverse=True):
+		if len(words) == words_to_use:
+			break
+		print("\t{}:  {:,}".format(w, wc[w]))
+		words.append(w)
+
+	print("\nGenerating labels based on {} words".format(len(words)))
+
+	def make_exp(w):
+		return r"( " + w + " )"
+
+	# expressions = list()
+	replace_char = chr(1)
+	ret = np.zeros(len(a), dtype=np.uint8)
+
+	# expressions = [make_exp(x) for x in words]
+
+	expressions = [r"a", r"e", r"i", r"o", r"u"]
+	words = ["a", "e", "i", "o", "u"]
+	# each replace string is [ XXXX ] where X is the replace_char
+	i = 0
+	for word, exp in zip(words, expressions):
+		gc.collect()
+		replace_string = replace_char * len(word) # (" " + replace_char * len(word) + " ")
+		a = re.sub(exp, replace_string, a)
+		print("\t{:02d}: Done with: {}".format(i, word))
+		i += 1
+
+	print("\n\tDone with all replacements")
+	# if its a replace char then set the label to 1 else it stays zero
+	# mask = replace_char * len(a)
+	# mask = map(ord, mask)
+	# a = map(ord, a)
+	# ret = np.logical_and(mask, a)
+	# ret = np.array(ret, dtype=np.uint8)
+	for i in range(len(a)):
+		ret[i] = a[i] == replace_char
+
+	assert len(ret) == len(seq)
+	return ret
+
+
+def train(args):
+	one_mil = 1000000
+
+	todo = 1 * one_mil
+
+	data_loader = TextLoader(args.data_dir, args.save_dir,
+							 args.batch_size, args.seq_length, todo=todo,
+							 labeler_fn=labeler)
 
 	args.vocab_size = data_loader.vocab_size
 	args.batch_size = data_loader.batch_size
@@ -162,7 +293,7 @@ def train(args):
 		assert os.path.isfile(
 			os.path.join(args.init_from, "config.pkl")), "config.pkl file does not exist in path %s" % args.init_from
 		assert os.path.isfile(os.path.join(args.init_from,
-										"chars_vocab.pkl")), "chars_vocab.pkl.pkl file does not exist in path %s" % args.init_from
+										   "chars_vocab.pkl")), "chars_vocab.pkl.pkl file does not exist in path %s" % args.init_from
 		ckpt = tf.train.get_checkpoint_state(args.init_from)
 		assert ckpt, "No checkpoint found"
 		assert ckpt.model_checkpoint_path, "No model path found in checkpoint"
@@ -181,26 +312,9 @@ def train(args):
 		assert saved_chars == data_loader.chars, "Data and loaded model disagree on character set!"
 		assert saved_vocab == data_loader.vocab, "Data and loaded model disagree on dictionary mappings!"
 
-
 	# args.rnn_size = abs( (data_loader.vocab_size + args.seq_length) // 2)
 	# print("Changed rnn size to be the avg of the in and out layers: ", args.rnn_size)
 	# print("In layer: {}  Out layer: {}".format(args.seq_length, data_loader.vocab_size))
-
-
-	def hidden_size(num_in, num_out):
-		upper = num_out if num_out > num_in else num_in
-		lower = num_in if num_in < num_out else num_out
-
-		upper = upper if 2 * num_in < upper else 2 * num_in
-		
-		mid = (2/3) * num_in + num_out
-		
-		print("\n upper: {:.1f}   mid: {:.1f}	lower: {:.1f}:".format(upper, mid, lower))
-
-		if mid < upper and mid > lower:
-			return int(mid)
-		return int(upper + lower) // 2
-
 
 	# args.rnn_size = hidden_size(args.seq_length, data_loader.vocab_size)
 
@@ -215,11 +329,6 @@ def train(args):
 	model = Model(args, data_loader.num_batches)
 
 	print("Model built")
-
-	# refresh dumped data since some models
-	# change the values of args
-	dump_data(data_loader, model.args)
-	dump_args(args)
 
 	# used if you want a lot of logging
 	sess_config = tf.ConfigProto()
@@ -249,11 +358,15 @@ def train(args):
 	args.data["avg_time_per_step"] = list()
 	args.data["logged_time"] = list()
 
-	num_params = np.sum([np.prod(v.get_shape().as_list()) for v in tf.trainable_variables()])
-	
-	print("\nModel has {:,} trainable params".format(num_params))
-	print("Data has {:,} individual characters\n".format(data_loader.num_chars))
+	args.num_params = int(np.sum([np.prod(v.get_shape().as_list()) for v in tf.trainable_variables()]))
 
+	# refresh dumped data since some models
+	# change the values of args
+	dump_data(data_loader, model.args)
+	dump_args(args)
+
+	print("\nModel has {:,} trainable params".format(args.num_params))
+	print("Data has {:,} individual characters\n".format(data_loader.num_chars))
 
 	with tf.Session(config=sess_config) as sess:
 		# instrument for tensorboard
@@ -271,22 +384,20 @@ def train(args):
 
 		print("Starting...")
 		print("Have {} epochs and {} batches per epoch"
-			.format(args.num_epochs, data_loader.num_batches))
+			  .format(args.num_epochs, data_loader.num_batches))
 		total_time = 0.0
 		# run_meta = tf.RunMetadata()
 
 		data_loader.reset_batch_pointer()
 
 		print("Total size of batch data: ", to_gb(data_loader.batches.nbytes), "GB")
-		
+
 		trace = None
-	
-	#	sess.run(tf.assign(model.lr, args.learning_rate))
+
+		print("Initializing local variables")
+		sess.run(tf.local_variables_initializer())
 
 		for epoch in range(args.num_epochs):
-			# sess.run(tf.assign(model.lr,
-			#				args.learning_rate * (args.decay_rate ** epoch)))
-			
 			print("Resetting batch pointer for epoch: ", epoch)
 			data_loader.reset_batch_pointer()
 			# state = sess.run(model.initial_state)
@@ -297,11 +408,6 @@ def train(args):
 				step = epoch * data_loader.num_batches + batch
 
 				x, y = data_loader.next_batch()
-				# ops = [ tf.assign(model.input_data, x), tf.assign(model.targets, y) ]
-				# sess.run(ops)
-
-
-
 				feed = {model.input_data: x, model.targets: y}
 
 				last_batch = batch == data_loader.num_batches - 1
@@ -309,63 +415,56 @@ def train(args):
 
 				# if printing
 				if step % print_cycle == 0 and step > 0 or (last_batch and last_epoch):
-					summary, train_loss, state, _, lr, g_step = sess.run([summaries, model.cost,
-						model.final_state, model.train_op, model.lr_decay, model.global_step], feed_dict=feed,
-						options=run_options, run_metadata=run_meta)
-					
-					confusion = sess.run(model.confusion, feed)
-		
-					trace = timeline.Timeline(step_stats=run_meta.step_stats)
-					
-					trace_path = os.path.join(args.save_dir, "step_" + str(step) + ".ctf.json")
-					with open(trace_path, "w")	as t_file:
-							t_file.write(trace.generate_chrome_trace_format())
 
-					writer.add_summary(summary, step)
-					end = time.time()
+					with PrintTrain(sess, model, summaries, feed) as item:
+						writer.add_summary(item["summary"], step)
+						end = time.time()
 
-					total_time += end - start
-					avg_time_per = round(total_time / step if step > 0 else step + 1, 2)
-					steps_left = total_steps - step
-					print("{}/{} (epoch {}), train_loss: {:.5f}, lr: {:.6f}  time/{}: {:.3f} time/step = {:.3f}  time left: {:.2f}m g_step: {}"
-						.format(step, total_steps, epoch, train_loss, lr, print_cycle,
-								end - start, avg_time_per, steps_left * avg_time_per / 60, g_step))
-					print(confusion)
-								
-					start = time.time()
+						total_time += end - start
+						avg_time_per = round(total_time / step if step > 0 else step + 1, 2)
 
-					global_diff = time.time() - global_start
-					args.data["losses"].append(float(train_loss))
-					args.data["logged_time"].append(int(global_diff))
-					args.data["avg_time_per_step"].append(float(avg_time_per))
+						with Confusion(sess, model, feed) as confusion_matrix:
+							pretty_print(item, step, total_steps, epoch, print_cycle, end, start, avg_time_per)
+							confusion_matrix["precision_"] = sess.run(model.precision_update, feed)
+							confusion_matrix["accuracy_"] = sess.run(model.accuracy_update, feed)
+							pretty_print_confusion(confusion_matrix)
+							# print("\nReferences:")
+							# for thing, count in objgraph.most_common_types(limit=10):
+							# 	print("\t{}: {:,}".format(thing, count))
+							# objgraph.show_growth()
+
+						start = time.time()
+
+						global_diff = time.time() - global_start
+						args.data["losses"].append(float(item["train_loss"]))
+						args.data["logged_time"].append(int(global_diff))
+						args.data["avg_time_per_step"].append(float(avg_time_per))
+						args.data["last_recorded_loss"] = {
+							"time": int(time.time() - global_start),
+							"loss": float(item["train_loss"])
+						}
+						args.data["total_train_time"] = {
+							"steps": int(total_steps),
+							"time": int(time.time() - global_start)
+						}
 
 				else:  # else normal training
-					train_loss, state, _ = sess.run(
-						[model.cost, model.final_state, model.train_op], feed)
+					with NormalTrain(sess, model, feed):
+						pass
 
 				if step % args.save_every == 0 or (last_batch and last_epoch):
 					# save for the last result
-					
-					if trace:
-						with open(os.path.join(args.save_dir, "step_" + str(step) + ".ctf.json"), "w") as t_file:
-							t_file.write(trace.generate_chrome_trace_format())
 
-					checkpoint_path = os.path.join(args.save_dir, 'model.ckpt')
-					saver.save(sess, checkpoint_path, global_step=step)
-					dump_args(args)
-					print("model saved to {}".format(checkpoint_path))
-					args.data["last_recorded_loss"] = {
-						"time": int(time.time() - global_start),
-						"loss": float(train_loss)
-					}
-					args.data["total_train_time"] = {
-						"steps": int(total_steps),
-						"time": int(time.time() - global_start)
-					}
+					# if trace:
+					#	with open(os.path.join(args.save_dir, "step_" + str(step) + ".ctf.json"), "w") as t_file:
+					#		t_file.write(trace.generate_chrome_trace_format())
+
+					save_model(args, saver, sess, step)
+
 				# increment the model step
 				# model.inc_step()
 				# sess.run(model.inc_step)
-	
+
 
 if __name__ == '__main__':
 	main()
