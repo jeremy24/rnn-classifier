@@ -9,6 +9,7 @@ import threading
 import math
 import re
 import gc
+import traceback
 from six.moves import cPickle
 
 from utils import TextLoader
@@ -146,7 +147,8 @@ class Confusion(object):
 
 	def __exit__(self, type, value, trace):
 		if value:
-			print("Confusion Error: {}\n{}\n{}".format(type, value, trace))
+			print("Confusion Error: {}\n{}\n".format(type, value))
+			traceback.print_tb(trace)
 			exit(1)
 
 
@@ -173,12 +175,26 @@ class PrintTrain(object):
 		self.args = [summaries, model.loss, model.final_state, model.train_op, model.lr_decay, model.global_step]
 
 	def __enter__(self):
+		# print("summary")
+		# summary = self.sess.run(self.args[0], self.feed)
+		# print("loss")
+		# loss = self.sess.run(self.args[1], self.feed)
+		# print("state")
+		# state = self.sess.run(self.args[2], self.feed)
+		# print("train")
+		# _ = self.sess.run(self.args[3], self.feed)
+		# print("lr")
+		# lr = self.sess.run(self.args[4], self.feed)
+		# print("g_step")
+		# g_step= self.sess.run(self.args[5], self.feed)
+
 		summary, loss, state, _, lr, g_step = self.sess.run(self.args, feed_dict=self.feed)
 		return {"summary": summary, "train_loss": loss, "state": state, "lr": lr, "g_step": g_step}
 
 	def __exit__(self, type, value, trace):
 		if value:
-			print("PrintTrain Error: {}\n{}\n{}".format(type, value, trace))
+			print("PrintTrain Error: {}\n{}\n".format(type, value))
+			traceback.print_tb(trace)
 			exit(1)
 
 
@@ -283,6 +299,7 @@ def train(args):
 
 	args.vocab_size = data_loader.vocab_size
 	args.batch_size = data_loader.batch_size
+	args.label_ratio = data_loader.ratio
 
 	print("Vocab size: ", args.vocab_size)
 
@@ -422,12 +439,14 @@ def train(args):
 
 						total_time += end - start
 						avg_time_per = round(total_time / step if step > 0 else step + 1, 2)
-
+						print("\nMy precision: ", sess.run(model.other_precision, feed))
+						print("False Negatives: ", sess.run(model._fn, feed))
+						print("Abs diff: ", sess.run(model._abs_diff, feed))
+						print("loss weights: ", sess.run(model._weights, feed))
 						with Confusion(sess, model, feed) as confusion_matrix:
 							pretty_print(item, step, total_steps, epoch, print_cycle, end, start, avg_time_per)
-							confusion_matrix["precision_"] = sess.run(model.precision_update, feed)
-							confusion_matrix["accuracy_"] = sess.run(model.accuracy_update, feed)
-							pretty_print_confusion(confusion_matrix)
+							print(confusion_matrix)
+							# pretty_print_confusion(confusion_matrix)
 							# print("\nReferences:")
 							# for thing, count in objgraph.most_common_types(limit=10):
 							# 	print("\t{}: {:,}".format(thing, count))

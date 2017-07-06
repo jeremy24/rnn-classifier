@@ -158,61 +158,37 @@ class Model(object):
 		return ret
 
 	# this will only work for a binary	classification problem
-	def compute_confusion(self, logits, targets):
-		"""Get the confusion matric from the logits and targets"""
-
-		# logits => [batch_size, seq_length, vocab_size/num classes]
-		# targets => [batch_size, seq_length]
-
-		# unroll the logits to [batch_size * seq_length, vocab_size]
-		# flatten targets to [ batch_size * seq_length ]
-		logits = tf.reshape(tf.to_float(logits), [-1, self.args.vocab_size])
-		targets = tf.reshape(tf.to_int32(targets), [-1])
-
-		is_label_one = tf.cast(targets, dtype=tf.bool)
-		is_label_zero = tf.logical_not(is_label_one)
-
-		try:
-			correct_pred = tf.nn.in_top_k(logits, targets, 1, name="correct_answer")
-		except ValueError as ex:
-			print("Unable to get correct pred:", ex)
-			exit(1)
-		false_pred = tf.logical_not(correct_pred)
-
-		tp = tf.reduce_sum(tf.to_int32(tf.logical_and(correct_pred, is_label_one)))
-		fp = tf.reduce_sum(tf.to_int32(tf.logical_and(false_pred, is_label_one)))
-		tn = tf.reduce_sum(tf.to_int32(tf.logical_and(correct_pred, is_label_zero)))
-		fn = tf.reduce_sum(tf.to_int32(tf.logical_and(false_pred, is_label_zero)))
-
-		try:
-			precision = tp / (fp + tp)
-		except ZeroDivisionError:
-			precision = 0.0
-		try:
-			recall = tp / (tp + fn)
-		except ZeroDivisionError:
-			recall = 0.0
-		try:
-			accuracy = (tn + tp) / (tn + fp + fn + tp)
-		except ZeroDivisionError:
-			accuracy = 0.0
-		try:
-			sensitivity = recall  # same thing
-		except ZeroDivisionError:
-			sensitivity = 0.0
-		try:
-			specificity = tn / (tn + fp)
-		except ZeroDivisionError:
-			specificity = 0.0
-
-		ret = {"tp": tp, "fp": fp, "tn": tn, "fn": fn, "accuracy": accuracy, "precision": precision, "recall": recall,
-			   "sensitivity": sensitivity, "specificity": specificity}
-
-		self.precision, self.precision_update = tf.contrib.metrics.streaming_precision(correct_pred, targets)
-		self.accuracy, self.accuracy_update = tf.contrib.metrics.streaming_accuracy(correct_pred, targets)
-		# ret["precision_"] = pred_update
-
-		return ret
+	# def compute_confusion(self, logits, targets):
+	# 	"""Get the confusion matric from the logits and targets"""
+	#
+	# 	# logits => [batch_size, seq_length, vocab_size/num classes]
+	# 	# targets => [batch_size, seq_length]
+	#
+	# 	# unroll the logits to [batch_size * seq_length, vocab_size]
+	# 	# flatten targets to [ batch_size * seq_length ]
+	# 	logits = tf.reshape(tf.to_float(logits), [-1, self.args.vocab_size])
+	# 	targets = tf.reshape(tf.to_int32(targets), [-1])
+	#
+	# 	is_label_one = tf.cast(targets, dtype=tf.bool)
+	# 	is_label_zero = tf.logical_not(is_label_one)
+	#
+	# 	try:
+	# 		correct_pred = tf.nn.in_top_k(logits, targets, 1, name="correct_answer")
+	# 	except ValueError as ex:
+	# 		print("Unable to get correct pred:", ex)
+	# 		exit(1)
+	# 	false_pred = tf.logical_not(correct_pred)
+	#
+	#
+	#
+	# 	# self.precision, self.precision_update = tf.contrib.metrics.streaming_precision(correct_pred, targets)
+	# 	# self.accuracy, self.accuracy_update = tf.contrib.metrics.streaming_accuracy(correct_pred, targets)
+	# 	# self.recall, self.recall_update = tf.contrib.metrics.streaming_recall(correct_pred, targets)
+	# 	# # ret["precision_"] = pred_update
+	#
+	# 	ret = {"precision": self.precision, "accuracy": self.accuracy, "recall": self.recall}
+	#
+	# 	return ret
 
 	def __init__(self, args, num_batches=None, training=True):
 		""" init """
@@ -235,10 +211,24 @@ class Model(object):
 
 		self.seq_length = self.args.seq_length
 
+		# for the confusion matrix stuff
+		self._confusion = None
+		self._predictions = None
+		self._recall_update = None
+		self._recall = None
+		self._accuracy = None
+		self._accuracy_update = None
+		self._precision = None
+		self._precision_update = None
+
+		self._lr_decay = None
+		self._loss = None
+		self._cost = None
+
 		print("\nSetting self.lr = {:.5}".format(args.learning_rate))
 
 		# self.lr = tf.Variable(args.learning_rate, name="lr", dtype=tf.float32)
-		self.lr = tf.Variable(args.learning_rate, name="lr", dtype=tf.float32, trainable=False)
+		self._lr = None
 
 		print("Cell type is: ", args.model)
 		print("Batch size is: ", args.batch_size)
@@ -272,7 +262,7 @@ class Model(object):
 		# all of these are pinned to the gpu
 		# self.all_input_data = None
 		# self.all_target_data = None
-		self.global_step = tf.Variable(0, trainable=False, name="global_step")
+		self._global_step = None
 		self.inc_step = tf.assign_add(self.global_step, 1, use_locking=True, name="inc_global_step")
 		self.input_data = None
 		self.targets = None
@@ -331,65 +321,46 @@ class Model(object):
 		logits_shape = [self.args.batch_size, self.args.seq_length, self.args.vocab_size]
 		self.logits = tf.reshape(self.logits, logits_shape)
 
-		with tf.name_scope("compute_loss"):
-			# loss_weights = tf.ones([self.args.batch_size, self.args.seq_length])
-			# self.loss = s2s.sequence_loss(split_logits, tf.to_int32(self.targets),
-			#							loss_weights, name="compute_loss")
-
-			onehots = tf.one_hot(indices=tf.to_int32(self.targets),
-								 depth=self.args.vocab_size, dtype=tf.int32)
-			self.loss = tf.losses.softmax_cross_entropy(onehot_labels=onehots, logits=self.logits)
-
-			print("Vocab size:", self.args.vocab_size)
-			print("logits shape: ", self.logits.shape)
-			print("Targets shape: ", self.targets.shape)
-
-			self.confusion = self.compute_confusion(self.logits, tf.to_int32(self.targets))
-		# self.loss = -self.confusion["precision"]
-
-		with tf.name_scope('cost'):
-			self.cost = self.loss
+		# with tf.name_scope("compute_loss"):
+		# 	# loss_weights = tf.ones([self.args.batch_size, self.args.seq_length])
+		# 	# self.loss = s2s.sequence_loss(split_logits, tf.to_int32(self.targets),
+		# 	#							loss_weights, name="compute_loss")
+		#
+		# 	onehots = tf.one_hot(indices=tf.to_int32(self.targets),
+		# 						 depth=self.args.vocab_size, dtype=tf.int32)
+		# 	# self.loss = tf.losses.softmax_cross_entropy(onehot_labels=onehots, logits=self.logits)
+		#
+		# 	self.loss = tf.nn.weighted_cross_entropy_with_logits(targets=onehots, logits=self.logits, pos_weight=3.0)
+		#
+		# 	print("Vocab size:", self.args.vocab_size)
+		# 	print("logits shape: ", self.logits.shape)
+		# 	print("Targets shape: ", self.targets.shape)
+		#
+		# 	# self.confusion = self.compute_confusion(self.logits, tf.to_int32(self.targets))
+		# # self.loss = -self.confusion["precision"]
 
 		self.final_state = last_state
 
-		# with tf.name_scope("optimizer"):
-		#	self.optimizer = tf.train.AdamOptimizer(learning_rate=self.lr)
+		with tf.name_scope("optimizer"):
+			self.optimizer = tf.train.AdamOptimizer(learning_rate=self.lr)
+			self.train_op = self.optimizer.minimize(self.loss)
 
-		self.lr_decay = tf.train.exponential_decay(self.lr, global_step=self.global_step,
-												   decay_steps=self.num_batches // 2, decay_rate=self.args.decay_rate,
-												   staircase=True, name="decay_lr")
 
 		print("\nSetup learning rate decay:")
 		print("\tlr: {}\n\tdecay every {} steps\n\tdecay rate: {}\n\tstaircase: {}"
 			  .format(self.lr, self.num_batches // 2, self.args.decay_rate, True))
 
-		self.train_op = tf.contrib.layers.optimize_loss(
-			loss=self.loss,
-			global_step=tf.contrib.framework.get_global_step(),
-			clip_gradients=self.args.grad_clip,
-			learning_rate_decay_fn=None,
-			name="optimize",
-			colocate_gradients_with_ops=True,
-			learning_rate=self.lr_decay,
-			optimizer="Adagrad")
 
-		# grads, t_vars = zip(*self.optimizer.compute_gradients(self.cost))
-		# grads, _ = tf.clip_by_global_norm(grads, self.args.grad_clip)
-		# self.train_op = self.optimizer.apply_gradients(zip(grads, t_vars))
 
-		# with tf.name_scope("grad_clip"):
-		#	gradients, variables = zip(*self.optimizer.compute_gradients(self.cost))
-		#	# self.grads = gradients
-		#	gradients, _ = tf.clip_by_global_norm(gradients, 5.0)
-		# self.clipped_grads = gradients
-		# with tf.name_scope("apply_grads"):
-		#	self.train_op = self.optimizer.apply_gradients(zip(gradients, variables))
-
-		# with tf.name_scope("gradients"):
-		#	if type(gradients) is list:
-		#		for i in range(len(gradients)):
-		#			print("Hanging grad histogram for: ", variables[i].name)
-		#			tf.summary.histogram(variables[i].name, gradients[i])
+		# self.train_op = tf.contrib.layers.optimize_loss(
+		# 	loss = self.loss,
+		# 	global_step=tf.contrib.framework.get_global_step(),
+		# 	clip_gradients=self.args.grad_clip,
+		# 	learning_rate_decay_fn=None,
+		# 	name="optimize",
+		# 	colocate_gradients_with_ops=True,
+		# 	learning_rate=self.lr_decay,
+		# 	optimizer="Adagrad")
 
 		print("\ntrainable_variables:")
 		for var in tf.trainable_variables():
@@ -405,9 +376,162 @@ class Model(object):
 
 		tf.summary.scalar("learning_rate", self.lr)
 
+
+
 	# tf.summary.histogram('logits', self.logits)
 	# tf.summary.histogram('loss', self.loss)
-	# tf.summary.scalar('train_loss', self.cost)
+	# t
+	# f.summary.scalar('train_loss', self.cost)
+
+
+
+	@property
+	def loss(self):
+		with tf.name_scope("compute_loss"):
+
+			# loss_weights = tf.ones([self.args.batch_size, self.args.seq_length])
+			# self.loss = s2s.sequence_loss(split_logits, tf.to_int32(self.targets),
+			#							loss_weights, name="compute_loss")
+			if self._loss is None:
+				print("\nSetting up loss")
+				print("\tCalling confusion to hang its internals")
+				confusion = self.confusion
+				self._label_ratio = tf.Variable(self.args.label_ratio, name="label_ratio", trainable=False, dtype=self.gpu_type)
+				print("\tLabel Ratio: ", self._label_ratio)
+				onehots = tf.one_hot(indices=tf.to_int32(self.targets),
+								 depth=self.args.vocab_size, dtype=self.targets.dtype)
+
+				# this will weight so that labels of "1" are more important
+				# self._label_weight = tf.Variable(1.0/self._label_ratio, name="label_weight", dtype=tf.float32)
+				# weight = tf.multiply(self._label_weight, tf.cast(tf.equal(self.targets, 1), tf.float32)) + 1
+
+				weight = tf.ones([self.args.batch_size, self.args.seq_length])
+
+				# self._loss = tf.losses.softmax_cross_entropy(onehot_labels=onehots, logits=self.logits)
+				print("\tOnehots shape: ", onehots.shape)
+				print("\tLogits shape: ", self.logits.shape)
+				print("\tWeight shape: ", weight.shape)
+				assert onehots.shape == self.logits.shape, "Logits shape != labels shape"
+
+				preds = tf.nn.softmax(self.logits)
+				preds = tf.argmax(preds, 2)
+				preds = tf.to_float(preds)
+
+				targets = tf.to_float(self.targets)
+
+				assert preds.shape == targets.shape, "Preds shape != targets sghape"
+
+				diff = tf.losses.absolute_difference(labels=targets, predictions=preds, reduction=tf.losses.Reduction.NONE)
+
+				self._abs_diff = tf.count_nonzero(diff)
+
+				# cast all to in
+				preds = tf.to_int32(preds)
+				targets = tf.to_int32(targets)
+				diff = tf.to_int32(diff)
+
+				# all three are of shape => [batch_size, seq_length]
+				self._tp = tf.reduce_sum(tf.multiply(preds, targets))
+				self._fp = tf.reduce_sum(tf.multiply(preds, diff))
+				self._fn = tf.reduce_sum(tf.multiply(targets, diff))
+				# now they are all scalars
+
+				# avoid a division by zero
+				tweak = tf.constant(1e-6, dtype=tf.float32)
+
+				# cast all to bool , and then flip it
+				bool_preds = tf.cast(preds, tf.bool)
+
+				# where pred = 0 and targ = 1
+				false_negs =  tf.cast(tf.multiply(targets, diff), tf.bool) #tf.logical_and(tf.logical_not(bool_preds), tf.cast(targets, tf.bool))
+
+				# this will make all "NO" predictions where we wanted a "YES" be penalized by false_negative weight / 2
+				# maybe good..?
+				flipped_preds = tf.to_float(false_negs)
+
+				flipped_preds = tf.multiply(flipped_preds, tf.multiply(tf.to_float(self._fn), 0.25))
+
+				# everything thats not a false negative has a weight of one
+				self._weights = tf.multiply(flipped_preds, tf.ones(flipped_preds.shape))
+
+				# exit(1)
+				self.other_precision = tf.divide(self._tp, self._tp + self._fp)
+				self._loss = tf.losses.softmax_cross_entropy(onehot_labels=onehots, logits=self.logits)
+
+			print("Returning loss")
+			return self._loss
+
+	@property
+	def cost(self):
+		with tf.name_scope('cost'):
+			if self._cost is None:
+				self._cost = self.loss
+			return self._cost
+
+	@property
+	def lr_decay(self):
+		if self._lr_decay is None:
+			self._lr_decay = tf.train.exponential_decay(self.lr, global_step=self.global_step,
+												   decay_steps=self.num_batches // 2, decay_rate=self.args.decay_rate,
+											   staircase=True, name="decay_lr")
+		return self._lr_decay
+
+	@property
+	def lr(self):
+		if self._lr is None:
+			self._lr = tf.Variable(self.args.learning_rate, name="lr", dtype=tf.float32, trainable=False)
+		return self._lr
+
+	@property
+	def predictions(self):
+		with tf.name_scope("predictions"):
+			if self._predictions is None:
+				print("Building predictions")
+				self._predictions = tf.reshape(tf.nn.softmax(self.logits), [-1, self.args.vocab_size])
+				self._predictions = tf.argmax(self._predictions, 1)
+			return self._predictions
+
+	@property
+	def recall(self):
+		with tf.name_scope("recall"):
+			if self._recall is None and self._recall_update is None:
+				print("Building recall")
+				targets = tf.reshape(self.targets, [-1])
+				self._recall, self._recall_update = tf.contrib.metrics.streaming_recall(self.predictions, targets)
+			return self._recall
+
+	@property
+	def accuracy(self):
+		with tf.name_scope("accuracy"):
+			if self._accuracy is None and self._accuracy_update is None:
+				print("Building accuracy")
+				targets = tf.reshape(self.targets, [-1])
+				self._accuracy, self._accuracy_update = tf.contrib.metrics.streaming_accuracy(self.predictions, targets)
+			return self._accuracy
+
+	@property
+	def precision(self):
+		with tf.name_scope("precision"):
+			print("Building precision")
+			if self._precision is None and self._precision_update is None:
+				targets = tf.reshape(self.targets, [-1])
+				self._precision, self._precision_update = tf.metrics.precision(labels=targets, predictions=self.predictions)
+			return self._precision
+
+	@property
+	def confusion(self):
+		if self._confusion is None:
+			print("Building confusion")
+			self._confusion = {"accuracy": self.accuracy, "precision": self.precision, "recall": self.recall}
+		return self._confusion
+
+	@property
+	def global_step(self):
+		with tf.name_scope("global_step_counter"):
+			if self._global_step is None:
+				self._global_step = tf.Variable(0, trainable=False, name="global_step")
+			return self._global_step
+
 
 	def sample(self, sess, chars, vocab, num=200, prime='The ', sampling_type=0):
 		state = sess.run(self.cell.zero_state(1, tf.float32))

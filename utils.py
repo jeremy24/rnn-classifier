@@ -37,6 +37,7 @@ class TextLoader(object):
 		self.num_batches = 0
 		self.batches = None
 		self.test_batches = None
+		self.ratio = None
 
 		np.random.seed(int(time.time()))
 
@@ -99,7 +100,7 @@ class TextLoader(object):
 		self.reverse_vocab = dict()
 		self.vocab_size = 0
 
-		min_percent = 0.05
+		min_percent = 0.005
 
 		if todo < len(data) * min_percent:
 			print("todo of {:,} is less than {}% of {:,}, changing..."
@@ -150,9 +151,10 @@ class TextLoader(object):
 
 		num_true_labels = np.sum(self.labels)
 
+		self.ratio = num_true_labels / len(self.labels) * 100.0
+
 		print("Have {:,} true labeled chars out of {:,}  {:.4f}%"
-			  .format(num_true_labels, len(self.labels),
-					  num_true_labels / len(self.labels) * 100.0))
+			  .format(num_true_labels, len(self.labels), self.ratio))
 
 		assert len(self.labels) == len(self.tensor)
 
