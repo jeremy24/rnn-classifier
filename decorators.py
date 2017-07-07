@@ -50,10 +50,7 @@ def define_scope_no_property(function, scope=None, *args, **kwargs):
 	A decorator for functions that define TensorFlow operations. The wrapped
 	function will only be executed once. Subsequent calls to it will directly
 	return the result so that operations are added to the graph only once.
-	The operations added by the function live within a tf.variable_scope(). If
-	this decorator is used with arguments, they will be forwarded to the
-	variable scope. The scope name defaults to the name of the wrapped
-	function.
+	This does not create a tf.name_scope variable scope
 	"""
 	attribute = '_cache_' + function.__name__
 	name = scope or function.__name__
@@ -66,6 +63,57 @@ def define_scope_no_property(function, scope=None, *args, **kwargs):
 		return getattr(self, attribute)
 
 	return decorator
+
+
+@doublewrap
+def as_int32(function, name="to_in32", *args, **kwargs):
+	"""
+	:param function (Passed Automatically)
+	:param name [optional]
+	:return: The results of the function cast to tf.int32
+	"""
+	@functools.wraps(function)
+	def decorator(self):
+		return tf.to_int32(function, name=name)
+	return decorator
+
+
+@doublewrap
+def as_float(function, name="to_float", *args, **kwargs):
+	"""
+	:param function (Passed Automatically)
+	:param name [optional]
+	:return: The results of the function cast to tf.float via tf.to_float
+	"""
+	@functools.wraps(function)
+	def decorator(self):
+		return tf.to_float(function(self), name=name)
+	return decorator
+
+
+@doublewrap
+def format_float(function, precision=10, *args, **kwargs):
+	"""
+	:param function (Passed Automatically)
+	:param precision
+	:return: The results of the function rounded to precision
+	"""
+	@functools.wraps(function)
+	def decorator(self):
+		return round(function(self), precision)
+	return decorator
+
+
+@doublewrap
+def no_dupes(function, *args, **kwargs):
+	"""
+	:return: The results of the function as a list without any dupes
+	"""
+	@functools.wraps(function)
+	def decorator(self):
+		return list(set(list(function(self))))
+	return decorator
+
 
 @doublewrap
 def define_scope(function, scope=None, *args, **kwargs):
@@ -85,7 +133,7 @@ def define_scope(function, scope=None, *args, **kwargs):
 	@functools.wraps(function)
 	def decorator(self):
 		if not hasattr(self, attribute):
-			with tf.variable_scope(name, *args, **kwargs):
+			with tf.variable_name_scope(name, *args, **kwargs):
 				setattr(self, attribute, function(self))
 		return getattr(self, attribute)
 

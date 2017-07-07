@@ -1,4 +1,5 @@
 
+from decorators import no_dupes
 
 class Prepositions(object):
 	preps = list()
@@ -15,7 +16,7 @@ class Prepositions(object):
 	def fill_multiples(self):
 		self.preps += ["according to", "adjacent to", "ahead of", "apart from", "as for"]
 		self.preps += ["as of", "as per", "as regards", "aside from", "back to", "because of"]
-		self.preps += ["close to", "due to","except for","far from","inside of","instead of"]
+		self.preps += ["close to", "due to", "except for", "far from", "inside of", "instead of"]
 		self.preps += ["left of", "near to", "next to", "opposite of", "opposite to"]
 		self.preps += ["out from", "out of", "outside of", "owing to", "prior to"]
 		self.preps += ["pursuant to", "rather than", "regardless of", "right of"]
@@ -39,13 +40,17 @@ class Prepositions(object):
 		self.preps = list(set(self.preps))
 		self.preps = sorted(self.preps)
 
+	@no_dupes
+	@property
 	def words(self):
 		return self.preps
 
+	@no_dupes
 	def starts_with(self, char):
 		return [x for x in self.preps if x[0] == char]
-		# return map(lambda x: x[0] == char, self.preps)
 
+	# return map(lambda x: x[0] == char, self.preps)
+	@no_dupes
 	def len_between(self, lower=None, upper=None):
 		"""Gets words where  lower < len(word) < upper"""
 		lower = 0 if lower is None else int(lower)

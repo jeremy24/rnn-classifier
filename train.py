@@ -20,6 +20,8 @@ import objgraph
 
 import tensorflow as tf
 
+from decorators import *
+
 from tensorflow.python.client import timeline
 os.environ["LD_LIBRARY_PATH"] = "/usr/local/cuda/extras/CUPTI/lib64/"
 
@@ -121,12 +123,14 @@ def pretty_print_confusion(confusion):
 	print("\n")
 
 
+@format_float(precision=3)
 def to_gb(num_bytes):
-	return round(num_bytes / math.pow(2, 30), 3)
+	return num_bytes / math.pow(2, 30)
 
 
+@format_float(precision=3)
 def to_mb(num_bytes):
-	return round(num_bytes / math.pow(2, 20), 3)
+	return num_bytes / math.pow(2, 20)
 
 
 def save_model(args, saver, sess, step):
@@ -175,19 +179,6 @@ class PrintTrain(object):
 		self.args = [summaries, model.loss, model.final_state, model.train_op, model.lr_decay, model.global_step]
 
 	def __enter__(self):
-		# print("summary")
-		# summary = self.sess.run(self.args[0], self.feed)
-		# print("loss")
-		# loss = self.sess.run(self.args[1], self.feed)
-		# print("state")
-		# state = self.sess.run(self.args[2], self.feed)
-		# print("train")
-		# _ = self.sess.run(self.args[3], self.feed)
-		# print("lr")
-		# lr = self.sess.run(self.args[4], self.feed)
-		# print("g_step")
-		# g_step= self.sess.run(self.args[5], self.feed)
-
 		summary, loss, state, _, lr, g_step = self.sess.run(self.args, feed_dict=self.feed)
 		return {"summary": summary, "train_loss": loss, "state": state, "lr": lr, "g_step": g_step}
 
@@ -244,7 +235,6 @@ def labeler(seq, words_to_use=5):
 			wc[x] = 0
 		wc[x] += 1
 
-
 	print("\nWords being used:")
 	for w in sorted(wc, key=wc.get, reverse=True):
 		if len(words) == words_to_use:
@@ -253,9 +243,6 @@ def labeler(seq, words_to_use=5):
 		words.append(w)
 
 	print("\nGenerating labels based on {} words".format(len(words)))
-
-	def make_exp(w):
-		return r"( " + w + " )"
 
 	# expressions = list()
 	replace_char = chr(1)
@@ -275,12 +262,7 @@ def labeler(seq, words_to_use=5):
 		i += 1
 
 	print("\n\tDone with all replacements")
-	# if its a replace char then set the label to 1 else it stays zero
-	# mask = replace_char * len(a)
-	# mask = map(ord, mask)
-	# a = map(ord, a)
-	# ret = np.logical_and(mask, a)
-	# ret = np.array(ret, dtype=np.uint8)
+
 	for i in range(len(a)):
 		ret[i] = a[i] == replace_char
 
@@ -439,12 +421,11 @@ def train(args):
 
 						total_time += end - start
 						avg_time_per = round(total_time / step if step > 0 else step + 1, 2)
-						print("\nMy precision: ", sess.run(model.other_precision, feed))
-						print("False Negatives: ", sess.run(model._fn, feed))
-						print("Abs diff: ", sess.run(model._abs_diff, feed))
-						print("Scale factor: ", sess.run(model.loss_scale_factor, feed))
 
-						print("loss weights: ", sess.run(model.loss_weights, feed))
+						print("False Negatives: ", sess.run(model.false_negatives, feed))
+						print("Abs diff: ", sess.run(model.absolute_prediction_diff, feed))
+						print("Scale factor: ", sess.run(model.loss_scale_factors, feed))
+						print("Loss weights: ", sess.run(model.loss_weights, feed))
 
 						with Confusion(sess, model, feed) as confusion_matrix:
 							pretty_print(item, step, total_steps, epoch, print_cycle, end, start, avg_time_per)

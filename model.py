@@ -12,8 +12,7 @@ from tensorflow.contrib import seq2seq as s2s
 
 import numpy as np
 
-from decorators import define_scope
-from decorators import ifnotdefined
+from decorators import *
 """Build a RNN model """
 
 
@@ -383,66 +382,55 @@ class Model(object):
 	def label_ratio(self):
 		return tf.Variable(self.args.label_ratio, name="label_ratio", trainable=False, dtype=self.gpu_type)
 
-	@property
-	def loss(self):
-		with tf.name_scope("compute_loss"):
-
-			# loss_weights = tf.ones([self.args.batch_size, self.args.seq_length])
-			# self.loss = s2s.sequence_loss(split_logits, tf.to_int32(self.targets),
-			#							loss_weights, name="compute_loss")
-			if self._loss is None:
-				print("\nSetting up loss")
-				print("\tCalling confusion to hang its internals")
-				confusion = self.confusion
-				# self._label_ratio =
-				print("\tLabel Ratio: ", self.label_ratio)
-				onehots = tf.one_hot(indices=tf.to_int32(self.targets),
-								 depth=self.args.vocab_size, dtype=self.targets.dtype)
-
-				# this will weight so that labels of "1" are more important
-				# self._label_weight = tf.Variable(1.0/self._label_ratio, name="label_weight", dtype=tf.float32)
-				# weight = tf.multiply(self._label_weight, tf.cast(tf.equal(self.targets, 1), tf.float32)) + 1
-
-				weight = tf.ones([self.args.batch_size, self.args.seq_length])
-
-				# self._loss = tf.losses.softmax_cross_entropy(onehot_labels=onehots, logits=self.logits)
-				print("\tOnehots shape: ", onehots.shape)
-				print("\tLogits shape: ", self.logits.shape)
-				print("\tWeight shape: ", weight.shape)
-				assert onehots.shape == self.logits.shape, "Logits shape != labels shape"
-
-
-				preds = tf.to_float(self.twod_predictions)
-
-				targets = self.float_targets
-
-				assert preds.shape == targets.shape, "Preds shape != targets sghape"
-
-				diff = self.absolute_prediction_diff
-
-				self._abs_diff = tf.count_nonzero(diff)
-
-				# cast all to in
-				preds = tf.to_int32(preds)
-				targets = tf.to_int32(targets)
-				diff = tf.to_int32(diff)
-
-				# all three are of shape => [batch_size, seq_length]
-				self._tp = tf.reduce_sum(tf.multiply(preds, targets))
-				self._fp = tf.reduce_sum(tf.multiply(preds, diff))
-				self._fn = tf.reduce_sum(tf.multiply(targets, diff))
-
-
-				# exit(1)
-				self.other_precision = tf.divide(self._tp, self._tp + self._fp)
-				self._loss = tf.losses.softmax_cross_entropy(onehot_labels=onehots,
-															 logits=self.logits,
-															 weights=self.loss_weights)
-
-			print("Returning loss")
-			return self._loss
+	@define_scope
+	def onehot_labels(self):
+		tf.one_hot(indices=tf.to_int32(self.targets),
+						 depth=self.args.vocab_size, dtype=self.targets.dtype)
 
 	@define_scope
+	def loss(self):
+		# loss_weights = tf.ones([self.args.batch_size, self.args.seq_length])
+		# self.loss = s2s.sequence_loss(split_logits, tf.to_int32(self.targets),
+		#							loss_weights, name="compute_loss")
+		print("\nSetting up loss")
+		print("\tCalling confusion to hang its internals")
+		confusion = self.confusion
+		# self._label_ratio =
+		print("\tLabel Ratio: ", self.label_ratio)
+		onehots = tf.one_hot(indices=tf.to_int32(self.targets),
+						 depth=self.args.vocab_size, dtype=self.targets.dtype)
+
+		# self._loss = tf.losses.softmax_cross_entropy(onehot_labels=onehots, logits=self.logits)
+		print("\tOnehots shape: ", onehots.shape)
+		print("\tLogits shape: ", self.logits.shape)
+		print("\tWeight shape: ", self.loss_weights.shape)
+		assert onehots.shape == self.logits.shape == self.loss_weights.shape, "Logits shape != labels shape != weights shape"
+
+		self.other_precision = None # tf.divide(self._tp, self._tp + self._fp)
+		self._loss = tf.losses.softmax_cross_entropy(onehot_labels=onehots,
+														 logits=self.logits,
+														 weights=self.loss_weights)
+
+		print("Returning loss")
+		return self._loss
+
+	@define_scope
+	@as_int32
+	def false_negatives(self):
+		return tf.reduce_sum(tf.multiply(self.float_targets, self.absolute_prediction_diff))
+
+	@define_scope
+	@as_int32
+	def false_positives(self):
+		return tf.reduce_sum(tf.multiply(tf.to_int32(self.twod_predictions), self.absolute_prediction_diff))
+
+	@define_scope
+	@as_int32
+	def true_positives(self):
+		return tf.reduce_sum(tf.multiply(tf.to_int32(self.twod_predictions), tf.to_int32(self.float_targets)))
+
+	@define_scope
+	@as_int32
 	def absolute_prediction_diff(self):
 		return tf.losses.absolute_difference(labels=self.float_targets,
 					predictions=tf.to_float(self.twod_predictions),
@@ -480,7 +468,7 @@ class Model(object):
 
 	# @define_scope(scope="print_scales")
 	@property
-	def loss_scale_factor(self):
+	def loss_scale_factors(self):
 		return {"fn": self.false_negative_loss_scale_factor}
 
 	@define_scope(scope="scale_factor")
@@ -490,10 +478,10 @@ class Model(object):
 			return log(false negatives)
 		This will hang a scalar summary to log the scale factor being used
 		"""
-		if self._fn is None:
-			raise Exception("Cannot get loss_scale_factor is model._fn is undefined ")
+		if self.false_negatives is None:
+			raise Exception("Cannot get loss_scale_factor, model.false_negatives is undefined ")
 
-		as_float = tf.to_float(tf.abs(self._fn))
+		as_float = tf.to_float(tf.abs(self.false_negatives))
 		cond = tf.cond(tf.equal(as_float, 0.0),
 				   true_fn=lambda: 1.0,
 				   false_fn=lambda: tf.log(tf.log(as_float)))
@@ -544,13 +532,11 @@ class Model(object):
 
 	@define_scope
 	def confusion(self):
-		confusion = {"accuracy": self.accuracy, "precision": self.precision, "recall": self.recall}
-		return confusion
+		return {"accuracy": self.accuracy, "precision": self.precision, "recall": self.recall}
 
 	@define_scope
 	def global_step(self):
-		global_step = tf.Variable(0, trainable=False, name="global_step")
-		return global_step
+		return tf.Variable(0, trainable=False, name="global_step")
 
 	@define_scope
 	def hardmax(self):
@@ -559,8 +545,6 @@ class Model(object):
 	@define_scope
 	def single_hardmax(self):
 		return tf.argmax(self.hardmax)
-
-
 
 
 

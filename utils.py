@@ -16,6 +16,7 @@ import concurrent.futures as cf
 from six.moves import cPickle
 import numpy as np
 
+from decorators import *
 
 class TextLoader(object):
 	def __init__(self, data_dir, save_dir, batch_size, seq_length,
@@ -188,8 +189,10 @@ class TextLoader(object):
 		self.batches = np.load(train_file)
 		self.test_batches = np.load(test_file)
 
-	def to_gb(self, num):
-		return round(num / math.pow(2, 30), 3)
+	@staticmethod
+	@format_float(precision=3)
+	def to_gb(num):
+		return num / math.pow(2, 30)
 
 	def sample_batches(self, size=15):
 
