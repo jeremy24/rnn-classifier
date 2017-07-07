@@ -13,7 +13,7 @@ from tensorflow.contrib import seq2seq as s2s
 import numpy as np
 
 from decorators import define_scope
-
+from decorators import ifnotdefined
 """Build a RNN model """
 
 
@@ -192,6 +192,10 @@ class Model(object):
 	#
 	# 	return ret
 
+	@ifnotdefined
+	def cell_fn(self, fn=rnn.LSTMCell):
+		return fn
+
 	def __init__(self, args, num_batches=None, training=True):
 		""" init """
 
@@ -235,10 +239,6 @@ class Model(object):
 		print("Cell type is: ", args.model)
 		print("Batch size is: ", args.batch_size)
 
-		def local_cell_fn(size):
-			return rnn.LSTMCell(size)
-
-		self.cell_fn = local_cell_fn
 		# self.cell_fn = rnn.GRUCell
 		# self.cell_fn = rnn.IntersectionRNNCell
 		# self.cell_fn = rnn.NASCell
@@ -305,10 +305,6 @@ class Model(object):
 			print("Getting probs")
 			self.probs = tf.nn.softmax(self.logits, name="probs_softmax")
 
-		with tf.name_scope("hardmax"):
-			print("Getting hardmax")
-			self.hardmax = tf.squeeze(s2s.hardmax(self.logits))
-			self.single_hardmax = tf.argmax(self.hardmax)
 
 		# we assume predicting one at a time for now
 		# TODO rewite to be able to predict N number of seqs at once
@@ -345,13 +341,15 @@ class Model(object):
 
 		with tf.name_scope("optimizer"):
 			self.optimizer = tf.train.AdamOptimizer(learning_rate=self.lr)
+
+		# put this here to make sure all internal optimizer variables get initialized
+		with tf.name_scope("train"):
 			self.train_op = self.optimizer.minimize(self.loss)
 
 
 		print("\nSetup learning rate decay:")
 		print("\tlr: {}\n\tdecay every {} steps\n\tdecay rate: {}\n\tstaircase: {}"
 			  .format(self.lr, self.num_batches // 2, self.args.decay_rate, True))
-
 
 
 		# self.train_op = tf.contrib.layers.optimize_loss(
@@ -370,22 +368,20 @@ class Model(object):
 
 		# values for tensorboard
 		# some nice logging
-		tf.summary.scalar("max_loss", tf.reduce_max(self.loss))
-		tf.summary.scalar("min_loss", tf.reduce_min(self.loss))
 
-		tf.summary.scalar("max_prob", tf.reduce_max(self.probs))
-		tf.summary.scalar("min_prob", tf.reduce_min(self.probs))
+		self.add_summaries(self.loss, "loss")
+		self.add_summaries(self.probs, "probability")
 
 		tf.summary.scalar("learning_rate", self.lr)
 
+	@staticmethod
+	def add_summaries(item, name):
+		tf.summary.scalar("max_" + name, tf.reduce_max(item))
+		tf.summary.scalar("min_" + name, tf.reduce_min(item))
 
-
-	# tf.summary.histogram('logits', self.logits)
-	# tf.summary.histogram('loss', self.loss)
-	# t
-	# f.summary.scalar('train_loss', self.cost)
-
-
+	@define_scope
+	def label_ratio(self):
+		return tf.Variable(self.args.label_ratio, name="label_ratio", trainable=False, dtype=self.gpu_type)
 
 	@property
 	def loss(self):
@@ -398,8 +394,8 @@ class Model(object):
 				print("\nSetting up loss")
 				print("\tCalling confusion to hang its internals")
 				confusion = self.confusion
-				self._label_ratio = tf.Variable(self.args.label_ratio, name="label_ratio", trainable=False, dtype=self.gpu_type)
-				print("\tLabel Ratio: ", self._label_ratio)
+				# self._label_ratio =
+				print("\tLabel Ratio: ", self.label_ratio)
 				onehots = tf.one_hot(indices=tf.to_int32(self.targets),
 								 depth=self.args.vocab_size, dtype=self.targets.dtype)
 
@@ -415,15 +411,14 @@ class Model(object):
 				print("\tWeight shape: ", weight.shape)
 				assert onehots.shape == self.logits.shape, "Logits shape != labels shape"
 
-				preds = tf.nn.softmax(self.logits)
-				preds = tf.argmax(preds, 2)
-				preds = tf.to_float(preds)
 
-				targets = tf.to_float(self.targets)
+				preds = tf.to_float(self.twod_predictions)
+
+				targets = self.float_targets
 
 				assert preds.shape == targets.shape, "Preds shape != targets sghape"
 
-				diff = tf.losses.absolute_difference(labels=targets, predictions=preds, reduction=tf.losses.Reduction.NONE)
+				diff = self.absolute_prediction_diff
 
 				self._abs_diff = tf.count_nonzero(diff)
 
@@ -436,33 +431,74 @@ class Model(object):
 				self._tp = tf.reduce_sum(tf.multiply(preds, targets))
 				self._fp = tf.reduce_sum(tf.multiply(preds, diff))
 				self._fn = tf.reduce_sum(tf.multiply(targets, diff))
-				# now they are all scalars
 
-				# avoid a division by zero
-				tweak = tf.constant(1e-6, dtype=tf.float32)
-
-				# cast all to bool , and then flip it
-				bool_preds = tf.cast(preds, tf.bool)
-
-				# where pred = 0 and targ = 1
-				false_negs =  tf.cast(tf.multiply(targets, diff), tf.bool) #tf.logical_and(tf.logical_not(bool_preds), tf.cast(targets, tf.bool))
-
-				# this will make all "NO" predictions where we wanted a "YES" be penalized by false_negative weight / 2
-				# maybe good..?
-				flipped_preds = tf.to_float(false_negs)
-
-				flipped_preds = tf.multiply(flipped_preds, tf.multiply(tf.to_float(self._fn), 0.25))
-
-				# everything thats not a false negative has a weight of one
-				self._weights = tf.multiply(flipped_preds, tf.ones(flipped_preds.shape))
 
 				# exit(1)
 				self.other_precision = tf.divide(self._tp, self._tp + self._fp)
-				self._loss = tf.losses.softmax_cross_entropy(onehot_labels=onehots, logits=self.logits)
+				self._loss = tf.losses.softmax_cross_entropy(onehot_labels=onehots,
+															 logits=self.logits,
+															 weights=self.loss_weights)
 
 			print("Returning loss")
 			return self._loss
 
+	@define_scope
+	def absolute_prediction_diff(self):
+		return tf.losses.absolute_difference(labels=self.float_targets,
+					predictions=tf.to_float(self.twod_predictions),
+					reduction=tf.losses.Reduction.NONE)
+
+	@ifnotdefined
+	def float_targets(self):
+		return tf.to_float(self.targets)
+
+	@define_scope
+	def twod_predictions(self):
+		predictions = tf.nn.softmax(self.logits)
+		# assert tf.rank(predictions) > 2, "Can't get 2d predictions from tensor of rank < 3"
+		return tf.argmax(predictions, 2)
+
+	@define_scope
+	def loss_weights(self):
+		targets = tf.to_float(self.targets)
+		predictions = tf.to_float(self.twod_predictions)
+
+		assert targets.shape == predictions.shape, "Targets shape != Predictions shape"
+
+		difference = tf.losses.absolute_difference(labels=targets, predictions=predictions, reduction=tf.losses.Reduction.NONE)
+
+		false_negatives = tf.cast(tf.multiply(targets, difference), tf.bool)
+		float_predictions = tf.to_float(false_negatives) # all values are 0 or 1
+		float_predictions = tf.multiply(float_predictions, self.false_negative_loss_scale_factor)
+		everything_else = tf.to_float(tf.logical_not(false_negatives))
+		assert float_predictions.shape == everything_else.shape, "Can't add mismatched shapes in loss_weights"
+		return tf.add(float_predictions, everything_else)
+
+	# @define_scope
+	# def loss_scale_factor(self):
+	# 	return tf.log(tf.to_float(tf.abs(self._fn)))
+
+	# @define_scope(scope="print_scales")
+	@property
+	def loss_scale_factor(self):
+		return {"fn": self.false_negative_loss_scale_factor}
+
+	@define_scope(scope="scale_factor")
+	def false_negative_loss_scale_factor(self):
+		"""
+		If false negatives are zero then return one else
+			return log(false negatives)
+		This will hang a scalar summary to log the scale factor being used
+		"""
+		if self._fn is None:
+			raise Exception("Cannot get loss_scale_factor is model._fn is undefined ")
+
+		as_float = tf.to_float(tf.abs(self._fn))
+		cond = tf.cond(tf.equal(as_float, 0.0),
+				   true_fn=lambda: 1.0,
+				   false_fn=lambda: tf.log(tf.log(as_float)))
+		tf.summary.scalar(name="loss_scale_factor", tensor=cond)
+		return cond
 
 	@define_scope
 	def cost(self):
@@ -515,6 +551,18 @@ class Model(object):
 	def global_step(self):
 		global_step = tf.Variable(0, trainable=False, name="global_step")
 		return global_step
+
+	@define_scope
+	def hardmax(self):
+		return tf.squeeze(s2s.hardmax(self.logits))
+
+	@define_scope
+	def single_hardmax(self):
+		return tf.argmax(self.hardmax)
+
+
+
+
 
 	def sample(self, sess, chars, vocab, num=200, prime='The ', sampling_type=0):
 		state = sess.run(self.cell.zero_state(1, tf.float32))

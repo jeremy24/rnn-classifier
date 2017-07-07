@@ -442,7 +442,10 @@ def train(args):
 						print("\nMy precision: ", sess.run(model.other_precision, feed))
 						print("False Negatives: ", sess.run(model._fn, feed))
 						print("Abs diff: ", sess.run(model._abs_diff, feed))
-						print("loss weights: ", sess.run(model._weights, feed))
+						print("Scale factor: ", sess.run(model.loss_scale_factor, feed))
+
+						print("loss weights: ", sess.run(model.loss_weights, feed))
+
 						with Confusion(sess, model, feed) as confusion_matrix:
 							pretty_print(item, step, total_steps, epoch, print_cycle, end, start, avg_time_per)
 							print(confusion_matrix)
