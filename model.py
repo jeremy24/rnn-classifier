@@ -12,6 +12,8 @@ from tensorflow.contrib import seq2seq as s2s
 
 import numpy as np
 
+from decorators import define_scope
+
 """Build a RNN model """
 
 
@@ -461,12 +463,11 @@ class Model(object):
 			print("Returning loss")
 			return self._loss
 
-	@property
+
+	@define_scope
 	def cost(self):
-		with tf.name_scope('cost'):
-			if self._cost is None:
-				self._cost = self.loss
-			return self._cost
+		cost = self.loss
+		return cost
 
 	@property
 	def lr_decay(self):
@@ -476,62 +477,44 @@ class Model(object):
 											   staircase=True, name="decay_lr")
 		return self._lr_decay
 
-	@property
+	@define_scope
 	def lr(self):
-		if self._lr is None:
-			self._lr = tf.Variable(self.args.learning_rate, name="lr", dtype=tf.float32, trainable=False)
-		return self._lr
+		lr = tf.Variable(self.args.learning_rate, name="lr", dtype=tf.float32, trainable=False)
+		return lr
 
-	@property
+	@define_scope
 	def predictions(self):
-		with tf.name_scope("predictions"):
-			if self._predictions is None:
-				print("Building predictions")
-				self._predictions = tf.reshape(tf.nn.softmax(self.logits), [-1, self.args.vocab_size])
-				self._predictions = tf.argmax(self._predictions, 1)
-			return self._predictions
+		predictions = tf.reshape(tf.nn.softmax(self.logits), [-1, self.args.vocab_size])
+		predictions = tf.argmax(predictions, 1)
+		return predictions
 
-	@property
+	@define_scope
 	def recall(self):
-		with tf.name_scope("recall"):
-			if self._recall is None and self._recall_update is None:
-				print("Building recall")
-				targets = tf.reshape(self.targets, [-1])
-				self._recall, self._recall_update = tf.contrib.metrics.streaming_recall(self.predictions, targets)
-			return self._recall
+		targets = tf.reshape(self.targets, [-1])
+		recall, _ = tf.metrics.recall(labels=targets, predictions=self.predictions)
+		return recall
 
-	@property
+	@define_scope
 	def accuracy(self):
-		with tf.name_scope("accuracy"):
-			if self._accuracy is None and self._accuracy_update is None:
-				print("Building accuracy")
-				targets = tf.reshape(self.targets, [-1])
-				self._accuracy, self._accuracy_update = tf.contrib.metrics.streaming_accuracy(self.predictions, targets)
-			return self._accuracy
+		targets = tf.reshape(self.targets, [-1])
+		accuracy, _ = tf.metrics.accuracy(labels=targets, predictions=self.predictions)
+		return accuracy
 
-	@property
+	@define_scope
 	def precision(self):
-		with tf.name_scope("precision"):
-			print("Building precision")
-			if self._precision is None and self._precision_update is None:
-				targets = tf.reshape(self.targets, [-1])
-				self._precision, self._precision_update = tf.metrics.precision(labels=targets, predictions=self.predictions)
-			return self._precision
+		targets = tf.reshape(self.targets, [-1])
+		precision, _ = tf.metrics.precision(labels=targets, predictions=self.predictions)
+		return precision
 
-	@property
+	@define_scope
 	def confusion(self):
-		if self._confusion is None:
-			print("Building confusion")
-			self._confusion = {"accuracy": self.accuracy, "precision": self.precision, "recall": self.recall}
-		return self._confusion
+		confusion = {"accuracy": self.accuracy, "precision": self.precision, "recall": self.recall}
+		return confusion
 
-	@property
+	@define_scope
 	def global_step(self):
-		with tf.name_scope("global_step_counter"):
-			if self._global_step is None:
-				self._global_step = tf.Variable(0, trainable=False, name="global_step")
-			return self._global_step
-
+		global_step = tf.Variable(0, trainable=False, name="global_step")
+		return global_step
 
 	def sample(self, sess, chars, vocab, num=200, prime='The ', sampling_type=0):
 		state = sess.run(self.cell.zero_state(1, tf.float32))
