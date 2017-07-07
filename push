@@ -10,7 +10,7 @@ if count $argv[1] > /dev/null
 	git add .
 	git commit -m $argv[1]
 	git push
-	git push git push --atomic --progress  https://github.com/jeremy24/rnn-classifier.git master
+	git push --atomic --progress  https://github.com/jeremy24/rnn-classifier.git master
 else
 	echo "Please provide a commit message"
 end	 
