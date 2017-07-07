@@ -1,0 +1,4 @@
+#!/usr/bin/fish
+
+
+git push --atomic --progress  https://github.com/jeremy24/rnn-classifier.git master
