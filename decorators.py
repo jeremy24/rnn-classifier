@@ -38,7 +38,7 @@ def ifnotdefined(function):
 	@functools.wraps(function)
 	def decorator(self):
 		if not hasattr(self, attribute):
-				setattr(self, attribute, function(self))
+			setattr(self, attribute, function(self))
 		return getattr(self, attribute)
 
 	return decorator
@@ -72,9 +72,11 @@ def as_int32(function, name="to_in32", *args, **kwargs):
 	:param name [optional]
 	:return: The results of the function cast to tf.int32
 	"""
+
 	@functools.wraps(function)
 	def decorator(self):
 		return tf.to_int32(function, name=name)
+
 	return decorator
 
 
@@ -85,9 +87,11 @@ def as_float(function, name="to_float", *args, **kwargs):
 	:param name [optional]
 	:return: The results of the function cast to tf.float via tf.to_float
 	"""
+
 	@functools.wraps(function)
 	def decorator(self):
 		return tf.to_float(function(self), name=name)
+
 	return decorator
 
 
@@ -98,9 +102,11 @@ def format_float(function, precision=10, *args, **kwargs):
 	:param precision
 	:return: The results of the function rounded to precision
 	"""
+
 	@functools.wraps(function)
 	def decorator(self):
 		return round(function(self), precision)
+
 	return decorator
 
 
@@ -109,9 +115,11 @@ def no_dupes(function, *args, **kwargs):
 	"""
 	:return: The results of the function as a list without any dupes
 	"""
+
 	@functools.wraps(function)
 	def decorator(self):
 		return list(set(list(function(self))))
+
 	return decorator
 
 
@@ -133,7 +141,7 @@ def define_scope(function, scope=None, *args, **kwargs):
 	@functools.wraps(function)
 	def decorator(self):
 		if not hasattr(self, attribute):
-			with tf.variable_name_scope(name, *args, **kwargs):
+			with tf.variable_scope(name, *args, **kwargs):
 				setattr(self, attribute, function(self))
 		return getattr(self, attribute)
 

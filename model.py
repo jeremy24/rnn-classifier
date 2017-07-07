@@ -13,6 +13,7 @@ from tensorflow.contrib import seq2seq as s2s
 import numpy as np
 
 from decorators import *
+
 """Build a RNN model """
 
 
@@ -304,7 +305,6 @@ class Model(object):
 			print("Getting probs")
 			self.probs = tf.nn.softmax(self.logits, name="probs_softmax")
 
-
 		# we assume predicting one at a time for now
 		# TODO rewite to be able to predict N number of seqs at once
 		if not self.is_training:
@@ -345,11 +345,9 @@ class Model(object):
 		with tf.name_scope("train"):
 			self.train_op = self.optimizer.minimize(self.loss)
 
-
 		print("\nSetup learning rate decay:")
 		print("\tlr: {}\n\tdecay every {} steps\n\tdecay rate: {}\n\tstaircase: {}"
 			  .format(self.lr, self.num_batches // 2, self.args.decay_rate, True))
-
 
 		# self.train_op = tf.contrib.layers.optimize_loss(
 		# 	loss = self.loss,
@@ -385,7 +383,7 @@ class Model(object):
 	@define_scope
 	def onehot_labels(self):
 		tf.one_hot(indices=tf.to_int32(self.targets),
-						 depth=self.args.vocab_size, dtype=self.targets.dtype)
+				   depth=self.args.vocab_size, dtype=self.targets.dtype)
 
 	@define_scope
 	def loss(self):
@@ -398,43 +396,41 @@ class Model(object):
 		# self._label_ratio =
 		print("\tLabel Ratio: ", self.label_ratio)
 		onehots = tf.one_hot(indices=tf.to_int32(self.targets),
-						 depth=self.args.vocab_size, dtype=self.targets.dtype)
+							 depth=self.args.vocab_size, dtype=self.targets.dtype)
 
 		# self._loss = tf.losses.softmax_cross_entropy(onehot_labels=onehots, logits=self.logits)
 		print("\tOnehots shape: ", onehots.shape)
 		print("\tLogits shape: ", self.logits.shape)
 		print("\tWeight shape: ", self.loss_weights.shape)
-		assert onehots.shape == self.logits.shape == self.loss_weights.shape, "Logits shape != labels shape != weights shape"
+		assert onehots.shape == self.logits.shape, "Logits shape != labels shape"
 
-		self.other_precision = None # tf.divide(self._tp, self._tp + self._fp)
+
+
+		self.other_precision = None  # tf.divide(self._tp, self._tp + self._fp)
 		self._loss = tf.losses.softmax_cross_entropy(onehot_labels=onehots,
-														 logits=self.logits,
-														 weights=self.loss_weights)
+													 logits=self.logits,
+													 weights=self.loss_weights)
 
 		print("Returning loss")
 		return self._loss
 
 	@define_scope
-	@as_int32
 	def false_negatives(self):
 		return tf.reduce_sum(tf.multiply(self.float_targets, self.absolute_prediction_diff))
 
 	@define_scope
-	@as_int32
 	def false_positives(self):
 		return tf.reduce_sum(tf.multiply(tf.to_int32(self.twod_predictions), self.absolute_prediction_diff))
 
 	@define_scope
-	@as_int32
 	def true_positives(self):
 		return tf.reduce_sum(tf.multiply(tf.to_int32(self.twod_predictions), tf.to_int32(self.float_targets)))
 
 	@define_scope
-	@as_int32
 	def absolute_prediction_diff(self):
 		return tf.losses.absolute_difference(labels=self.float_targets,
-					predictions=tf.to_float(self.twod_predictions),
-					reduction=tf.losses.Reduction.NONE)
+											 predictions=tf.to_float(self.twod_predictions),
+											 reduction=tf.losses.Reduction.NONE)
 
 	@ifnotdefined
 	def float_targets(self):
@@ -453,10 +449,11 @@ class Model(object):
 
 		assert targets.shape == predictions.shape, "Targets shape != Predictions shape"
 
-		difference = tf.losses.absolute_difference(labels=targets, predictions=predictions, reduction=tf.losses.Reduction.NONE)
+		difference = tf.losses.absolute_difference(labels=targets, predictions=predictions,
+												   reduction=tf.losses.Reduction.NONE)
 
 		false_negatives = tf.cast(tf.multiply(targets, difference), tf.bool)
-		float_predictions = tf.to_float(false_negatives) # all values are 0 or 1
+		float_predictions = tf.to_float(false_negatives)  # all values are 0 or 1
 		float_predictions = tf.multiply(float_predictions, self.false_negative_loss_scale_factor)
 		everything_else = tf.to_float(tf.logical_not(false_negatives))
 		assert float_predictions.shape == everything_else.shape, "Can't add mismatched shapes in loss_weights"
@@ -471,22 +468,30 @@ class Model(object):
 	def loss_scale_factors(self):
 		return {"fn": self.false_negative_loss_scale_factor}
 
+	@staticmethod
+	def loglog(item):
+		return tf.log(tf.log(tf.to_float(item)))
+
 	@define_scope(scope="scale_factor")
 	def false_negative_loss_scale_factor(self):
 		"""
 		If false negatives are zero then return one else
 			return log(false negatives)
 		This will hang a scalar summary to log the scale factor being used
+		It should always return a real value and never +-inf or NaN
 		"""
 		if self.false_negatives is None:
 			raise Exception("Cannot get loss_scale_factor, model.false_negatives is undefined ")
 
 		as_float = tf.to_float(tf.abs(self.false_negatives))
+		# value = tf.Variable(1.0, dtype=self.gpu_type, name="loss_scale_factor", trainable=False)
+		# if its zero, return one (no punishment) since log(0) is undefined
+		# this avoids NaN weights
 		cond = tf.cond(tf.equal(as_float, 0.0),
-				   true_fn=lambda: 1.0,
-				   false_fn=lambda: tf.log(tf.log(as_float)))
+					   true_fn=lambda: 1.0,
+					   false_fn=lambda: self.loglog(as_float))
 		tf.summary.scalar(name="loss_scale_factor", tensor=cond)
-		return cond
+		return cond  # tf.assign(value, cond)
 
 	@define_scope
 	def cost(self):
@@ -497,8 +502,9 @@ class Model(object):
 	def lr_decay(self):
 		if self._lr_decay is None:
 			self._lr_decay = tf.train.exponential_decay(self.lr, global_step=self.global_step,
-												   decay_steps=self.num_batches // 2, decay_rate=self.args.decay_rate,
-											   staircase=True, name="decay_lr")
+														decay_steps=self.num_batches // 2,
+														decay_rate=self.args.decay_rate,
+														staircase=True, name="decay_lr")
 		return self._lr_decay
 
 	@define_scope
@@ -545,8 +551,6 @@ class Model(object):
 	@define_scope
 	def single_hardmax(self):
 		return tf.argmax(self.hardmax)
-
-
 
 	def sample(self, sess, chars, vocab, num=200, prime='The ', sampling_type=0):
 		state = sess.run(self.cell.zero_state(1, tf.float32))

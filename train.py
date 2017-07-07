@@ -414,7 +414,7 @@ def train(args):
 
 				# if printing
 				if step % print_cycle == 0 and step > 0 or (last_batch and last_epoch):
-
+					print("\n\n")
 					with PrintTrain(sess, model, summaries, feed) as item:
 						writer.add_summary(item["summary"], step)
 						end = time.time()
