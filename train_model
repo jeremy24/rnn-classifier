@@ -1,7 +1,6 @@
 #!/usr/bin/fish
 
 
-
 # set the lib path to enable tracing for cuda
 set -g -x	LD_LIBRARY_PATH /usr/local/cuda/extras/CUPTI/lib64:$LD_LIBRARY_PATH
 
