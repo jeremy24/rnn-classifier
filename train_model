@@ -1,5 +1,7 @@
 #!/usr/bin/fish
 
+#source /home/ipp/virt_envs/tensorflow3_xla/bin/activate.fish
+
 
 
 # set the lib path to enable tracing for cuda
@@ -13,46 +15,52 @@ set -g -x  CUDA_VISIBLE_DEVICES "0"
 
 
 
-if  count $argv > /dev/null
+if	count $argv > /dev/null
 
 	set dir $argv[1]	
 	
 	set num_tests 2000
 	set print_cycle 100
-	set lr 1.0
-	set out_prob 0.8
-	set in_prob 0.8
-	set num_layers 2
-	set rnn_size 1200
+	set lr .1
+	set out_prob 0.6
+	set in_prob 0.6
+	set num_layers 1
+	set rnn_size 500
 	set gpu 0 
 	set seq_len 35
-	set num_epochs 150
-	set save_every 100
+	set num_epochs 10
+	set save_every 50
 	set data_dir .
 	set log_dir $dir"/logs"
-	set batch_size 50
+	set batch_size 100
 	set max_grad 5
 	set decay_rate .85
 	set model "lstm"
+	set use_weights 1
 
 	echo "Making directories..."
 
 	set do_delete 0
 	set do_test 0
+	
 
 	for arg in $argv
-		switch "$arg" 
+		switch "$arg"
 			case --delete
 				set do_delete 1
 			case --test 
 				set do_test 1
+			case --no_weights
+				set use_weights 0
 		end
 	end	
+
 
 	if [ $do_delete = 1 ]
 		echo "Deleting the save dir first"
 		rm -rf $save_dir $log_dir $dir
 	end
+
 
 	#if test (count $argv) = 2
 	#	set do_delete $argv[2]
@@ -69,11 +77,11 @@ if  count $argv > /dev/null
 
 	mkdir -p $dir $save_dir $log_dir
 	
-	echo $dir $save_dir $log_dir 	
+	echo $dir $save_dir $log_dir	
 
 	echo "Launching the model..."
 	
-	python train.py --model=$model --decay_rate=$decay_rate --grad_clip=$max_grad --batch_size=$batch_size --log_dir=$log_dir --data_dir=$data_dir --save_dir=$save_dir --print_cycle=$print_cycle --seq_length=$seq_len --num_epochs=$num_epochs --learning_rate=$lr --save_every=$save_every --output_keep_prob=$out_prob --input_keep_prob=$in_prob --num_layers=$num_layers --rnn_size=$rnn_size --gpu=$gpu
+	python train.py --model=$model --use_weights=$use_weights --decay_rate=$decay_rate --grad_clip=$max_grad --batch_size=$batch_size --log_dir=$log_dir --data_dir=$data_dir --save_dir=$save_dir --print_cycle=$print_cycle --seq_length=$seq_len --num_epochs=$num_epochs --learning_rate=$lr --save_every=$save_every --output_keep_prob=$out_prob --input_keep_prob=$in_prob --num_layers=$num_layers --rnn_size=$rnn_size --gpu=$gpu
 
 
 	#chmod 550 $save_dir

@@ -48,8 +48,10 @@ def main():
 		formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 	parser.add_argument('--data_dir', type=str, default='data/tinyshakespeare',
 						help='data directory containing input.txt')
+	parser.add_argument('--use_weights', type=int, default=1,
+						help='Whether to weight the losses')
 	parser.add_argument('--save_dir', type=str, default='save',
-						help='directory to store checkpointed models')
+						help='directory to store model checkpoints')
 	parser.add_argument('--log_dir', type=str, default='logs',
 						help='directory to store tensorboard logs')
 	parser.add_argument('--rnn_size', type=int, default=128,
@@ -114,6 +116,7 @@ def pretty_print(item, step, total_steps, epoch, print_cycle, end, start, avg_ti
 	str2 = "lr: {:.6f}  time/{}: {:.3f}".format(item["lr"], print_cycle, end - start)
 	str3 = " time/step = {:.3f}  time left: {:.2f}m g_step: {}".format(avg_time_per, time_left, item["g_step"])
 	print(str1 + str2 + str3)
+	assert step == item["g_step"], "Steps to not equal {} != {}".format(step, item["g_step"])
 
 
 def pretty_print_confusion(confusion):
@@ -133,11 +136,13 @@ def to_mb(num_bytes):
 	return num_bytes / math.pow(2, 20)
 
 
-def save_model(args, saver, sess, step):
+def save_model(args, saver, sess, step, dump=True, verbose=True):
 	checkpoint_path = os.path.join(args.save_dir, 'model.ckpt')
 	saver.save(sess, checkpoint_path, global_step=step)
-	dump_args(args)
-	print("model saved to {}".format(checkpoint_path))
+	if dump:
+		dump_args(args)
+	if verbose:
+		print("model saved to {}".format(checkpoint_path))
 
 
 class Confusion(object):
@@ -149,9 +154,9 @@ class Confusion(object):
 	def __enter__(self):
 		return self.sess.run(self.model.confusion, self.feed)
 
-	def __exit__(self, type, value, trace):
+	def __exit__(self, error_type, value, trace):
 		if value:
-			print("Confusion Error: {}\n{}\n".format(type, value))
+			print("Confusion Error: {}\n{}\n".format(error_type, value))
 			traceback.print_tb(trace)
 			exit(1)
 
@@ -166,9 +171,9 @@ class NormalTrain(object):
 		cost, state, _ = self.sess.run(self.args, self.feed)
 		return None
 
-	def __exit__(self, type, value, trace):
+	def __exit__(self, error_type, value, trace):
 		if value:
-			print("NormalTrain Error: {}\n{}\n{}".format(type, value, trace))
+			print("NormalTrain Error: {}\n{}\n{}".format(error_type, value, trace))
 			exit(1)
 
 
@@ -176,15 +181,15 @@ class PrintTrain(object):
 	def __init__(self, sess, model, summaries, feed):
 		self.sess = sess
 		self.feed = feed
-		self.args = [summaries, model.loss, model.final_state, model.train_op, model.lr_decay, model.global_step]
+		self.args = [summaries, model.loss, model.final_state, model.train_op, model.lr, model.global_step]
 
 	def __enter__(self):
 		summary, loss, state, _, lr, g_step = self.sess.run(self.args, feed_dict=self.feed)
 		return {"summary": summary, "train_loss": loss, "state": state, "lr": lr, "g_step": g_step}
 
-	def __exit__(self, type, value, trace):
+	def __exit__(self, error_type, value, trace):
 		if value:
-			print("PrintTrain Error: {}\n{}\n".format(type, value))
+			print("PrintTrain Error: {}\n{}\n".format(error_type, value))
 			traceback.print_tb(trace)
 			exit(1)
 
@@ -198,6 +203,14 @@ def hidden_size(num_in, num_out):
 	if upper > mid > lower:
 		return int(mid)
 	return int(upper + lower) // 2
+
+
+def check_confusion(raw, theirs):
+	assert raw["fn"] == theirs[1, 0], "False negatives don't match"
+	assert raw["fp"] == theirs[0, 1], "False positives don't match"
+	assert raw["tn"] == theirs[0, 0], "True negatives don't match"
+	assert raw["tp"] == theirs[1, 1], "True positives don't match"
+	assert raw["sum"] == np.sum(np.ndarray.flatten(np.array(theirs))), "Sums don't match"
 
 
 def bucket_by_length(words):
@@ -422,13 +435,27 @@ def train(args):
 						total_time += end - start
 						avg_time_per = round(total_time / step if step > 0 else step + 1, 2)
 
-						print("False Negatives: ", sess.run(model.false_negatives, feed))
-						print("Abs diff: ", sess.run(model.absolute_prediction_diff, feed))
-						print("Scale factor: ", sess.run(model.loss_scale_factors, feed))
-						print("Loss weights: ", sess.run(model.loss_weights, feed))
+						# raw_matrix = sess.run(model.raw_matrix, feed)
+						their_confusion = sess.run(model.their_confusion, feed)
+						# print("Raw Matrix: ", raw_matrix)
+
+						print(their_confusion)
+						# assert raw_matrix["sum"] == (args.batch_size * args.seq_length), "{} != {}".format(raw_matrix["sum"], args.batch_size * args.seq_length)
+						# check_confusion(raw_matrix, their_confusion)
+
+						# only print weights data if we are using them
+						if args.use_weights:
+							# print("Abs diff: ", sess.run(model.absolute_prediction_diff, feed))
+							print("Scale factor: ", sess.run(model.loss_scale_factors, feed))
+							# print("Loss weights: ", sess.run(model.loss_weights, feed))
+							weights = sess.run(model.loss_weights, feed)
+							sum_weights = [np.sum(x) for x in weights]
+							print("Weights:", sum_weights)
+							print(tf.add_n(weights))
 
 						with Confusion(sess, model, feed) as confusion_matrix:
 							pretty_print(item, step, total_steps, epoch, print_cycle, end, start, avg_time_per)
+							# print("lr base: ", sess.run(model._lr, feed))
 							print(confusion_matrix)
 							# pretty_print_confusion(confusion_matrix)
 							# print("\nReferences:")
@@ -462,7 +489,7 @@ def train(args):
 					#	with open(os.path.join(args.save_dir, "step_" + str(step) + ".ctf.json"), "w") as t_file:
 					#		t_file.write(trace.generate_chrome_trace_format())
 
-					save_model(args, saver, sess, step)
+					save_model(args, saver, sess, step, dump=False, verbose=False)
 
 				# increment the model step
 				# model.inc_step()

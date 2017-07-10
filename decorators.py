@@ -124,7 +124,7 @@ def no_dupes(function, *args, **kwargs):
 
 
 @doublewrap
-def define_scope(function, scope=None, *args, **kwargs):
+def define_scope(function, scope=None, summary=False, *args, **kwargs):
 	"""
 	A decorator for functions that define TensorFlow operations. The wrapped
 	function will only be executed once. Subsequent calls to it will directly
@@ -142,7 +142,10 @@ def define_scope(function, scope=None, *args, **kwargs):
 	def decorator(self):
 		if not hasattr(self, attribute):
 			with tf.variable_scope(name, *args, **kwargs):
-				setattr(self, attribute, function(self))
+				value = function(self)
+				setattr(self, attribute, value)
+				if summary:
+					tf.summary.scalar(function.__name__, value)
 		return getattr(self, attribute)
 
 	return decorator
