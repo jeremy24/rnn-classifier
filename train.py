@@ -234,8 +234,9 @@ def labeler(seq, words_to_use=5):
 	print("\nLabeler:")
 	print("\tSeq length: {:,} ".format(len(seq)))
 	a = seq
-	words = Prepositions().len_between(0, 6)
-	# words = ["the", "of", "and", "in", "to", "a", "with", "for", "is"]
+	# words = Prepositions().starts_with("b")
+	words = ["the", "of", "and", "in", "to", "a", "with", "for", "is"]
+
 
 	# the word list is the top 10 most
 	# common words in the sequence

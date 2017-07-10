@@ -378,12 +378,15 @@ class Model(object):
 		# self._loss = tf.losses.softmax_cross_entropy(onehot_labels=onehots, logits=self.logits)
 		print("\tOnehots shape: ", onehots.shape)
 		print("\tLogits shape: ", self.logits.shape)
+		print("\tLabel ratio: ", self.args.label_ratio)
 		# print("\tWeight shape: ", self.loss_weights.shape)
 		assert onehots.shape == self.logits.shape, "Logits shape != labels shape"
 
 		# if we don't use weights than all weights default to one
 		if self.args.use_weights:
 			print("\tWeighting the losses")
+			# a = self.loss
+			# self._loss = self.false_negative_loss_scale_factor
 			self._loss = tf.losses.softmax_cross_entropy(onehot_labels=onehots,
 														 logits=self.logits,
 														 weights=tf.add_n(self.loss_weights))
@@ -529,9 +532,9 @@ class Model(object):
 	def loglog(item):
 		return tf.log(tf.log(tf.to_float(item)))
 
-	@staticmethod
-	def fn_punish(number):
-		return tf.log(number)
+	def fn_punish(self, number):
+		# return number / 2.0
+		return tf.log(number) # * ( 1.0 / self.args.label_ratio)
 
 	@define_scope(scope="scale_factor")
 	def false_negative_loss_scale_factor(self):

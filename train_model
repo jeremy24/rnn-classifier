@@ -28,7 +28,7 @@ if	count $argv > /dev/null
 	set rnn_size 500
 	set gpu 0 
 	set seq_len 35
-	set num_epochs 10
+	set num_epochs 250
 	set save_every 50
 	set data_dir .
 	set log_dir $dir"/logs"
