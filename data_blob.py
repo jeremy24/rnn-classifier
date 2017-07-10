@@ -40,20 +40,18 @@ class Prepositions(object):
 		self.preps = list(set(self.preps))
 		self.preps = sorted(self.preps)
 
-	@no_dupes
 	@property
 	def words(self):
 		return self.preps
 
-	@no_dupes
 	def starts_with(self, char):
 		return [x for x in self.preps if x[0] == char]
 
 	# return map(lambda x: x[0] == char, self.preps)
-	@no_dupes
 	def len_between(self, lower=None, upper=None):
 		"""Gets words where  lower < len(word) < upper"""
 		lower = 0 if lower is None else int(lower)
 		upper = float("inf") if upper is None else int(upper)
 		ret = [x for x in self.preps if lower <= len(x) <= upper]
+		print("\nData blob returning {} words".format(len(ret)))
 		return ret

@@ -122,10 +122,10 @@ class Model(object):
 		return c
 
 	def build_one_layer(self):
-		size = (self.args.seq_length + self.args.vocab_size) // 2
-		print("\nsize changed to {}\n".format(size))
-		self.args.rnn_size = size
-		cell = self.cell_fn(size)
+		# size = (self.args.seq_length + self.args.vocab_size) // 2
+		# print("\nsize changed to {}\n".format(size))
+		# self.args.rnn_size = size
+		cell = self.cell_fn(self.args.rnn_size)
 		cell = self.add_dropout(cell, self.args.input_keep_prob, self.args.output_keep_prob)
 		return [cell]
 
@@ -256,7 +256,7 @@ class Model(object):
 		# the final layers
 		# maps the outputs	to [ vocab_size ] probs
 		# self.logits = tf.contrib.layers.fully_connected(output, args.vocab_size)
-		self.logits = tf.layers.dense(inputs=output, units=self.args.vocab_size)
+		self.logits = tf.layers.dense(inputs=output, units=self.args.num_classes)
 		print("Logits shape: ", self.logits.shape)
 
 		# both of these are for sampling
@@ -274,7 +274,7 @@ class Model(object):
 		# make into [ batch_size, seq_len, vocab_size ]
 		# it should already be this size, but this forces tf to recognize
 		# the shape
-		logits_shape = [self.args.batch_size, self.args.seq_length, self.args.vocab_size]
+		logits_shape = [self.args.batch_size, self.args.seq_length, self.args.num_classes]
 		self.logits = tf.reshape(self.logits, logits_shape)
 
 		# with tf.name_scope("compute_loss"):
@@ -360,7 +360,7 @@ class Model(object):
 	@define_scope
 	def onehot_labels(self):
 		tf.one_hot(indices=tf.to_int32(self.targets),
-				   depth=self.args.vocab_size, dtype=self.targets.dtype)
+				   depth=self.args.num_classes, dtype=self.targets.dtype)
 
 	@define_scope
 	def loss(self):
@@ -373,7 +373,7 @@ class Model(object):
 		# self._label_ratio =
 		print("\tLabel Ratio: ", self.label_ratio)
 		onehots = tf.one_hot(indices=tf.to_int32(self.targets),
-							 depth=self.args.vocab_size, dtype=self.targets.dtype)
+							 depth=self.args.num_classes, dtype=self.targets.dtype)
 
 		# self._loss = tf.losses.softmax_cross_entropy(onehot_labels=onehots, logits=self.logits)
 		print("\tOnehots shape: ", onehots.shape)
@@ -505,9 +505,8 @@ class Model(object):
 						true_fn=lambda: self.false_negative_loss_scale_factor,
 						false_fn=lambda: 1.0)
 
-		weighted_fp = tf.multiply(false_positives, 0.7)
-		weighted_tp = tf.multiply(true_positives, 0.05)
-
+		weighted_fp = tf.multiply(false_positives, 2.0)
+		weighted_tp = tf.multiply(true_positives, 0.8)
 
 		weighted_tn = tf.multiply(true_negatives, 1.0)
 		weighted_fn = tf.multiply(false_negatives, scale)
@@ -562,7 +561,7 @@ class Model(object):
 
 	@define_scope
 	def predictions(self):
-		predictions = tf.reshape(tf.nn.softmax(self.logits), [-1, self.args.vocab_size])
+		predictions = tf.reshape(tf.nn.softmax(self.logits), [-1, self.args.num_classes])
 		predictions = tf.argmax(predictions, 1)
 		return predictions
 

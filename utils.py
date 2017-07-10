@@ -163,8 +163,8 @@ class TextLoader(object):
 		self.num_chars = len(self.tensor)
 
 		# this is an "alias" to the number of classes in the problem
-		self.vocab_size = len(set(self.labels))
-		self.num_classes = self.vocab_size
+		self.vocab_size = len(self.vocab)
+		self.num_classes = len(set(self.labels))
 		print("Processing took {:.3f}  vocab size: {}"
 			  .format(time.time() - start, self.vocab_size))
 
@@ -240,8 +240,11 @@ class TextLoader(object):
 		assert len(ydata) == len(xdata), "Data lengths don't match: {} != {}".format(len(xdata), len(ydata))
 
 		# "alias" vocab size to really mean the number of labels
-		self.vocab_size = len(list(set(ydata)))
-		self.num_labels = self.vocab_size
+		# self.vocab_size = len(list(set(ydata)))
+		# self.num_labels = self.vocab_size
+
+		self.vocab_size = len(self.vocab)
+		self.num_classes = len(set(self.labels))
 
 		print("\nHave {} different labels".format(self.vocab_size))
 

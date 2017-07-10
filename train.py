@@ -234,37 +234,38 @@ def labeler(seq, words_to_use=5):
 	print("\nLabeler:")
 	print("\tSeq length: {:,} ".format(len(seq)))
 	a = seq
-	# words = Prepositions().len_between(0, 6)
+	words = Prepositions().len_between(0, 6)
 	# words = ["the", "of", "and", "in", "to", "a", "with", "for", "is"]
-	words = list()
 
 	# the word list is the top 10 most
 	# common words in the sequence
-	print("\tSplitting")
-	b = seq.split(" ")
-	wc = dict()
-	for x in b:
-		if x not in wc:
-			wc[x] = 0
-		wc[x] += 1
-
-	print("\nWords being used:")
-	for w in sorted(wc, key=wc.get, reverse=True):
-		if len(words) == words_to_use:
-			break
-		print("\t{}:  {:,}".format(w, wc[w]))
-		words.append(w)
+	# print("\tSplitting")
+	# b = seq.split(" ")
+	# wc = dict()
+	# for x in b:
+	# 	if x not in wc:
+	# 		wc[x] = 0
+	# 	wc[x] += 1
+	#
+	# print("\nWords being used:")
+	# for w in sorted(wc, key=wc.get, reverse=True):
+	# 	if len(words) == words_to_use:
+	# 		break
+	# 	print("\t{}:  {:,}".format(w, wc[w]))
+	# 	words.append(w)
 
 	print("\nGenerating labels based on {} words".format(len(words)))
-
 	# expressions = list()
 	replace_char = chr(1)
 	ret = np.zeros(len(a), dtype=np.uint8)
 
-	# expressions = [make_exp(x) for x in words]
+	def make_exp(w):
+		return r"( " + w + " )"
 
-	expressions = [r"a", r"e", r"i", r"o", r"u"]
-	words = ["a", "e", "i", "o", "u"]
+	expressions = [make_exp(x) for x in words]
+
+	# expressions = [r"a", r"e", r"i", r"o", r"u"]
+	# words = ["a", "e", "i", "o", "u"]
 	# each replace string is [ XXXX ] where X is the replace_char
 	i = 0
 	for word, exp in zip(words, expressions):
@@ -295,8 +296,12 @@ def train(args):
 	args.vocab_size = data_loader.vocab_size
 	args.batch_size = data_loader.batch_size
 	args.label_ratio = data_loader.ratio
+	args.num_classes = data_loader.num_classes
 
 	print("Vocab size: ", args.vocab_size)
+	print("Num classes: ", args.num_classes)
+
+	# exit(1)
 
 	# check compatibility if training is continued from previously saved model
 	if args.init_from is not None:
@@ -451,12 +456,12 @@ def train(args):
 							weights = sess.run(model.loss_weights, feed)
 							sum_weights = [np.sum(x) for x in weights]
 							print("Weights:", sum_weights)
-							print(tf.add_n(weights))
+							# print(tf.add_n(weights))
 
 						with Confusion(sess, model, feed) as confusion_matrix:
 							pretty_print(item, step, total_steps, epoch, print_cycle, end, start, avg_time_per)
 							# print("lr base: ", sess.run(model._lr, feed))
-							print(confusion_matrix)
+							# print(confusion_matrix)
 							# pretty_print_confusion(confusion_matrix)
 							# print("\nReferences:")
 							# for thing, count in objgraph.most_common_types(limit=10):
