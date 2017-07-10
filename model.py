@@ -371,7 +371,7 @@ class Model(object):
 		print("\tCalling confusion to hang its internals")
 		confusion = self.confusion
 		# self._label_ratio =
-		print("\tLabel Ratio: ", self.label_ratio)
+		# print("\tLabel Ratio: ", self.args.label_ratio)
 		onehots = tf.one_hot(indices=tf.to_int32(self.targets),
 							 depth=self.args.num_classes, dtype=self.targets.dtype)
 
