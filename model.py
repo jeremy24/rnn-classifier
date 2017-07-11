@@ -452,17 +452,22 @@ class Model(object):
 			self._loss = tf.losses.softmax_cross_entropy(onehot_labels=onehots,
 														 logits=self.logits,
 														 weights=tf.add_n(self.loss_weights))
+
+			raw_loss = tf.losses.softmax_cross_entropy(onehot_labels=onehots,
+														 logits=self.logits,
+														 weights=tf.add_n(self.loss_weights),
+														 reduction=tf.losses.Reduction.NONE)
+
+			tf.summary.histogram("raw_loss", raw_loss)
+
 		else:
 			print("\tNot weighting the losses")
 			self._loss = tf.losses.softmax_cross_entropy(onehot_labels=onehots,
 														 logits=self.logits)
 
-		# initialize it
-		# print(self.raw_matrix)
-
 		print("Returning loss")
 		# scale it up
-		return self._loss
+		return self._loss + self.false_negative_loss_scale_factor  # tf.losses.get_total_loss()  # self._loss
 
 	@define_scope
 	def raw_matrix(self):

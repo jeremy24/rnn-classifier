@@ -240,22 +240,24 @@ def labeler(seq, words_to_use=5):
 	# the word list is the top 10 most
 	# common words in the sequence
 	# print("\tSplitting")
-	words = list()
-	b = seq.split(" ")
-	wc = dict()
-	for x in b:
-		if x not in wc:
-			wc[x] = 0
-		wc[x] += 1
+	# words = list()
+	# b = seq.split(" ")
+	# wc = dict()
+	# for x in b:
+	# 	if x not in wc:
+	# 		wc[x] = 0
+	# 	wc[x] += 1
+	#
+	# print("\nWords being used:")
+	# for w in sorted(wc, key=wc.get, reverse=True):
+	# 	if len(words) == words_to_use:
+	# 		break
+	# 	if len(w) < 3:
+	# 		continue
+	# 	print("\t[{}]:  {:,}".format(w, wc[w]))
+	# 	words.append(w)
 
-	print("\nWords being used:")
-	for w in sorted(wc, key=wc.get, reverse=True):
-		if len(words) == words_to_use:
-			break
-		print("\t{}:  {:,}".format(w, wc[w]))
-		words.append(w)
-
-	# words = ["a", "e", "i", "o", "u"]
+	words = ["a", "e", "i", "o", "u"]
 
 	# words = ["\\underline"]
 	# words =
@@ -270,8 +272,8 @@ def labeler(seq, words_to_use=5):
 			return r"(" + w + ")"
 		return r"( " + w + " )"
 
-	# expressions = [make_exp(x, space=False) for x in words]
-	expressions = [r"[\\]underline"]
+	expressions = [make_exp(x, space=False) for x in words]
+	# expressions = [r"[\\]underline"]
 
 	# each replace string is [ XXXX ] where X is the replace_char
 	i = 0
@@ -307,9 +309,6 @@ def train(args):
 
 	print("Vocab size: ", args.vocab_size)
 	print("Num classes: ", args.num_classes)
-
-
-	exit(1)
 
 	# check compatibility if training is continued from previously saved model
 	if args.init_from is not None:
@@ -415,7 +414,6 @@ def train(args):
 
 		data_loader.reset_batch_pointer()
 
-		print("Total size of batch data: ", to_gb(data_loader.batches.nbytes), "GB")
 
 		trace = None
 
@@ -451,7 +449,10 @@ def train(args):
 				last_batch = batch == data_loader.num_batches - 1
 				last_epoch = epoch == args.num_epochs - 1
 
-				last_in_epoch = (step + 1) % data_loader.batch_size == data_loader.batch_size - 1
+				# last_in_epoch = (step + 1) % data_loader.batch_size == data_loader.batch_size - 1
+				s = epoch * data_loader.num_batches
+				s = step - s
+				last_in_epoch = s == data_loader.num_batches - 1
 
 				# if printing
 				if last_in_epoch or step == data_loader.num_batches  - 1 or step % print_cycle == 0 and step > 0 or (last_batch and last_epoch):
@@ -495,8 +496,8 @@ def train(args):
 						}
 
 				else:  # else normal training
-					with NormalTrain(sess, model, feed):
-						pass
+					with NormalTrain(sess, model, feed) as state:
+						cell_state = state
 
 				if last_in_epoch or step % args.save_every == 0 or (last_batch and last_epoch):
 					# save for the last result

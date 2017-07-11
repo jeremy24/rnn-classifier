@@ -99,6 +99,7 @@ class TextLoader(object):
 		print("\nProcessing files:")
 		for filename in files:
 			print("\t{}".format(filename))
+			data = data + "\n\n" if data is not None else ""
 			with codecs.open(filename, "r", encoding=self.encoding) as f:
 				data += f.read()
 		print("\n")
@@ -157,10 +158,12 @@ class TextLoader(object):
 
 		num_true_labels = np.sum(self.labels)
 
-		self.ratio = num_true_labels / len(self.labels) * 100.0
+		self.ratio = num_true_labels / len(self.labels)
 
 		print("Have {:,} true labeled chars out of {:,}  {:.4f}%"
-			  .format(num_true_labels, len(self.labels), self.ratio))
+			  .format(num_true_labels, len(self.labels), self.ratio * 100.0))
+
+		self.ratio = 1.0 / self.ratio
 
 		assert len(self.labels) == len(self.tensor)
 
@@ -235,7 +238,7 @@ class TextLoader(object):
 		self.tensor = self.tensor[:-chop_line]
 		self.labels = self.labels[:-chop_line]
 		assert len(self.tensor) == len(self.labels)
-		self.num_batches = len(self.tensor) / size
+		self.num_batches = len(self.tensor) // size
 
 	def create_batches(self):
 		self.trim_data()
