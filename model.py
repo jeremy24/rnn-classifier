@@ -151,6 +151,8 @@ class Model(object):
 		print("Done building cells")
 		return ret
 
+	def zero_states(self):
+		pass
 
 	def __init__(self, args, num_batches=None, training=True):
 		""" init """
@@ -202,19 +204,17 @@ class Model(object):
 		# self.cell_fn = rnn.IntersectionRNNCell
 		# self.cell_fn = rnn.NASCell
 
-		with tf.name_scope("Cells"):
-			print("Building cells of size: ", args.rnn_size)
-			cells = self.build_cells()
-			print("\nCells:")
-			print("\tSquishing {} cells into one".format(len(cells)))
-			for c in cells:
-				print("\t", c)
 
-			self.cell = rnn.MultiRNNCell(cells, state_is_tuple=True)
-			cell = self.cell
+		# with tf.name_scope("cells"):
+		# 	forward_cells = self.build_cells()
+		# 	backward_cells = self.build_cells()
+		# 	self.cell = tf.nn.bidirectional_dynamic_rnn(cell_fw=forward_cells,
+		# 												cell_bw=backward_cells,
+		# 												dtype=self.gpu_type,
+		# 												sequence_length=self.seq_length)
 
-		print("Setting self.initial_state based on batch size: ", self.args.batch_size)
-		self.initial_state = cell.zero_state(self.args.batch_size, self.gpu_type)
+
+
 
 		print("Setting self.num_batches")
 		self.num_batches = num_batches
@@ -242,14 +242,70 @@ class Model(object):
 										[args.vocab_size, args.rnn_size], trainable=False)
 			inputs = tf.nn.embedding_lookup(embedding, tf.to_int32(self.input_data))
 			self.embedding = embedding
+			# inputs => [batch_size, seq_length, embedding_size]
+			# embedding size is decided by tensorflow
 
-		# dropout beta testing: double check which one should affect next line
-		if training and args.output_keep_prob:
-			inputs = tf.nn.dropout(inputs, args.output_keep_prob)
-		# processing inputs on cpu
-		# with tf.device("/cpu:0"):
+		# # dropout beta testing: double check which one should affect next line
+		# if training and args.output_keep_prob:
+		# 	inputs = tf.nn.dropout(inputs, args.output_keep_prob)
+		# # processing inputs on cpu
+		# # with tf.device("/cpu:0"):
 
-		output, last_state = self.build_outputs(inputs)
+		# with tf.name_scope("cells"):
+		self.forward_cells = rnn.MultiRNNCell(self.build_cells(), state_is_tuple=True)
+		self.backward_cells = rnn.MultiRNNCell(self.build_cells(), state_is_tuple=True)
+
+		# lets the user have a valid value to zero the cells out
+		self.cell_zero_state = (self.forward_cells.zero_state(self.args.batch_size, self.gpu_type),
+							  self.backward_cells.zero_state(self.args.batch_size, self.gpu_type))
+
+
+		self.cell_state = (self.forward_cells.zero_state(self.args.batch_size, self.gpu_type),
+							  self.backward_cells.zero_state(self.args.batch_size, self.gpu_type))
+
+		print("Inputs: ", inputs)
+		seq_lens = [self.seq_length for _ in range(self.args.batch_size)]
+		output, self.final_state = tf.nn.bidirectional_dynamic_rnn(cell_fw=self.forward_cells,
+														cell_bw=self.backward_cells,
+														inputs=inputs,
+														initial_state_fw=self.cell_state[0],
+														initial_state_bw=self.cell_state[1],
+														dtype=self.gpu_type,
+														parallel_iterations=64,
+														sequence_length=seq_lens)
+
+		tf.summary.histogram("foward_state", self.cell_state[0])
+		tf.summary.histogram("backward_state", self.cell_state[1])
+
+		# if we are training, then make the last gotten state the new
+		# initial state, else we are sampling or testing and we want
+		# the starting state to be zero anyways
+		# if self.is_training:
+		# 	self.cell_state = self.last_state
+		# else:
+		# 	self.cell_state = (self.forward_cells.zero_state(self.args.batch_size, self.gpu_type),
+		# 					  self.backward_cells.zero_state(self.args.batch_size, self.gpu_type))
+
+
+		print(output)
+		# exit(1)
+		# average the outputs
+		output = tf.divide(tf.add(output[0], output[1]), 2.0)
+
+		# # This chunk is to do a regular multirnn setup
+		# with tf.name_scope("Cells"):
+		# 	print("Building cells of size: ", args.rnn_size)
+		# 	forward_cells = self.build_cells()
+		# 	print("\nCells:")
+		# 	print("\tSquishing {} cells into one".format(len(forward_cells)))
+		# 	for c in forward_cells:
+		# 		print("\t", c)
+		#
+		# 	self.cell = rnn.MultiRNNCell(forward_cells, state_is_tuple=True)
+		#
+		# print("Setting self.initial_state based on batch size: ", self.args.batch_size)
+		# self.initial_state = self.cell.zero_state(self.args.batch_size, self.gpu_type)
+		# output, last_state = self.build_outputs(inputs)
 
 		print("Getting logits")
 
@@ -295,7 +351,7 @@ class Model(object):
 		# 	# self.confusion = self.compute_confusion(self.logits, tf.to_int32(self.targets))
 		# # self.loss = -self.confusion["precision"]
 
-		self.final_state = last_state
+		# self.final_state = last_state
 		# print(self.lr)
 
 		# self._lr = tf.Variable(self.args.learning_rate, name="lr", dtype=tf.float32, trainable=False)
@@ -307,11 +363,19 @@ class Model(object):
 
 		self.global_step = tf.Variable(-1, name="global_step", trainable=False)
 
-		self.lr = tf.train.exponential_decay(self.args.learning_rate,
+		self.min_learn_rate = .005
+
+		self.lr_decay_fn = tf.train.exponential_decay(self.args.learning_rate,
 												global_step=tf.assign_add(self.global_step, 1, use_locking=True, name="inc_global_step"),
 												decay_steps=self.num_batches // 2,
 												decay_rate=self.decay_rate,
 												staircase=True, name="lr")
+
+		# don't allow the learning rate to go below a certain minimum
+		self.lr = self.args.learning_rate
+		self.lr = tf.cond(tf.less(self.lr, self.min_learn_rate),
+						  true_fn=lambda: self.min_learn_rate,
+						  false_fn=lambda: self.lr_decay_fn)
 
 		print("\nSetup learning rate decay:")
 		print("\tlr: {}\n\tdecay every {} steps\n\tdecay rate: {}\n\tstaircase: {}"
@@ -353,11 +417,8 @@ class Model(object):
 		tf.summary.scalar("max_" + name, tf.reduce_max(item))
 		tf.summary.scalar("min_" + name, tf.reduce_min(item))
 
-	@define_scope
-	def label_ratio(self):
-		return tf.Variable(self.args.label_ratio, name="label_ratio", trainable=False, dtype=self.gpu_type)
 
-	@define_scope
+	@ifnotdefined
 	def onehot_labels(self):
 		tf.one_hot(indices=tf.to_int32(self.targets),
 				   depth=self.args.num_classes, dtype=self.targets.dtype)
@@ -370,15 +431,16 @@ class Model(object):
 		print("\nSetting up loss")
 		print("\tCalling confusion to hang its internals")
 		confusion = self.confusion
-		# self._label_ratio =
-		# print("\tLabel Ratio: ", self.args.label_ratio)
+
+		self.label_ratio = float(self.args.label_ratio)
+
+		print("\tLabel Ratio: {:.3f}".format(self.label_ratio))
 		onehots = tf.one_hot(indices=tf.to_int32(self.targets),
 							 depth=self.args.num_classes, dtype=self.targets.dtype)
 
 		# self._loss = tf.losses.softmax_cross_entropy(onehot_labels=onehots, logits=self.logits)
 		print("\tOnehots shape: ", onehots.shape)
 		print("\tLogits shape: ", self.logits.shape)
-		print("\tLabel ratio: ", self.args.label_ratio)
 		# print("\tWeight shape: ", self.loss_weights.shape)
 		assert onehots.shape == self.logits.shape, "Logits shape != labels shape"
 
@@ -399,6 +461,7 @@ class Model(object):
 		# print(self.raw_matrix)
 
 		print("Returning loss")
+		# scale it up
 		return self._loss
 
 	@define_scope
@@ -444,7 +507,7 @@ class Model(object):
 	# def true_positives(self):
 	# 	return tf.reduce_sum(tf.multiply(tf.to_int32(self.twod_predictions), self.int_targets))
 
-	@define_scope
+	@ifnotdefined
 	def absolute_prediction_diff(self):
 		return tf.losses.absolute_difference(labels=self.float_targets,
 											 predictions=tf.to_float(self.twod_predictions),
@@ -454,31 +517,23 @@ class Model(object):
 	def float_targets(self):
 		return tf.to_float(self.targets)
 
-	@define_scope
+	@ifnotdefined
 	def twod_predictions(self):
 		predictions = tf.nn.softmax(self.logits)
 		# assert tf.rank(predictions) > 2, "Can't get 2d predictions from tensor of rank < 3"
 		return tf.argmax(predictions, 2)
 
-	@define_scope
+	@ifnotdefined
 	def loss_weights(self):
 		targets = tf.to_float(self.targets)
 		predictions = tf.to_float(self.twod_predictions)
 
 		assert targets.shape == predictions.shape, "Targets shape != Predictions shape"
 
-		difference = tf.losses.absolute_difference(labels=targets, predictions=predictions,
-												   reduction=tf.losses.Reduction.NONE)
-
-		trues = tf.cast(predictions, tf.bool)
-		falses = tf.logical_not(tf.cast(predictions, tf.bool))
-
-		positives = tf.cast(targets, tf.bool)
-		negatives = tf.logical_not(tf.cast(targets, tf.bool))
-
 		preds = tf.cast(predictions, tf.bool)
-
 		targs = tf.cast(targets, tf.bool)
+
+		print("Ratio: ", self.label_ratio)
 
 		# fn => guessed no was yes 0 and 1
 		# fp => guessed yes was no 1 and 0
@@ -508,6 +563,8 @@ class Model(object):
 						true_fn=lambda: self.false_negative_loss_scale_factor,
 						false_fn=lambda: 1.0)
 
+		# scale = tf.add(scale, self.label_ratio)
+
 		weighted_fp = tf.multiply(false_positives, 2.0)
 		weighted_tp = tf.multiply(true_positives, 0.8)
 
@@ -526,7 +583,7 @@ class Model(object):
 	# @define_scope(scope="print_scales")
 	@property
 	def loss_scale_factors(self):
-		return {"fn": self.false_negative_loss_scale_factor}
+		return {"fn": self.false_negative_loss_scale_factor + self.label_ratio}
 
 	@staticmethod
 	def loglog(item):
@@ -534,7 +591,7 @@ class Model(object):
 
 	def fn_punish(self, number):
 		# return number / 2.0
-		return tf.log(number) # * ( 1.0 / self.args.label_ratio)
+		return tf.log(number) #* ( 1.0 / self.args.label_ratio)
 
 	@define_scope(scope="scale_factor")
 	def false_negative_loss_scale_factor(self):
@@ -557,30 +614,30 @@ class Model(object):
 		tf.summary.scalar(name="loss_scale_factor", tensor=cond)
 		return cond  # tf.assign(value, cond)
 
-	@define_scope
+	@ifnotdefined
 	def cost(self):
 		cost = self.loss
 		return cost
 
-	@define_scope
+	@ifnotdefined
 	def predictions(self):
 		predictions = tf.reshape(tf.nn.softmax(self.logits), [-1, self.args.num_classes])
 		predictions = tf.argmax(predictions, 1)
 		return predictions
 
-	@define_scope
+	@ifnotdefined
 	def recall(self):
 		targets = tf.reshape(self.targets, [-1])
 		recall, _ = tf.metrics.recall(labels=targets, predictions=self.predictions)
 		return recall
 
-	@define_scope
+	@ifnotdefined
 	def accuracy(self):
 		targets = tf.reshape(self.targets, [-1])
 		accuracy, _ = tf.metrics.accuracy(labels=targets, predictions=self.predictions)
 		return accuracy
 
-	@define_scope
+	@ifnotdefined
 	def precision(self):
 		targets = tf.reshape(self.targets, [-1])
 		precision, _ = tf.metrics.precision(labels=targets, predictions=self.predictions)
@@ -591,7 +648,7 @@ class Model(object):
 		return tf.confusion_matrix(labels=tf.reshape(self.targets, [-1]),
 								   predictions=tf.reshape(self.predictions, [-1]))
 
-	@define_scope
+	@ifnotdefined
 	def confusion(self):
 		return {"accuracy": self.accuracy, "precision": self.precision, "recall": self.recall}
 
@@ -605,6 +662,52 @@ class Model(object):
 		return tf.argmax(self.hardmax)
 
 	def sample(self, sess, chars, vocab, num=200, prime='The ', sampling_type=0):
+		# state = sess.run(self.cell.zero_state(1, tf.float32))
+		print("got initial zero state")
+
+		print("Sampling type: ", sampling_type)
+		print("Primer: ", prime)
+
+		for char in prime[:-1]:
+			x = np.zeros((1, 1))
+			x[0, 0] = vocab[char]
+			feed = {self.input_data: x}  # , self.initial_state: state}
+			[state] = sess.run([self.final_state], feed)
+
+		print("Primed")
+
+		def weighted_pick(weights):
+			t = np.cumsum(weights)
+			s = np.sum(weights)
+			return int(np.searchsorted(t, np.random.rand(1) * s))
+
+		ret = prime
+		char = prime[-1]
+		print("Starting")
+		for n in range(num):
+			x = np.zeros((1, 1))
+			x[0, 0] = vocab[char]
+			feed = {self.input_data: x}  # , self.initial_state: state}
+			[probs, state] = sess.run([self.probs, self.final_state], feed)
+			p = probs[0]
+
+			if sampling_type == 0:
+				sample = np.argmax(p)
+			elif sampling_type == 2:
+				if char == ' ':
+					sample = weighted_pick(p)
+				else:
+					sample = np.argmax(p)
+			else:  # sampling_type == 1 default:
+				sample = weighted_pick(p)
+
+			prediction = chars[sample]
+			ret += prediction
+			char = prediction
+		return ret
+
+
+	def _old_sample(self, sess, chars, vocab, num=200, prime='The ', sampling_type=0):
 		state = sess.run(self.cell.zero_state(1, tf.float32))
 		print("got initial zero state")
 

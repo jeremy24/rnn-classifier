@@ -34,7 +34,46 @@ def main():
 	test(args)
 
 
+def make_html(original, expected, labels, percent):
+	if len(original) != len(labels):
+		raise ValueError("label and original lengths don't match: {} != {}".format(len(original), len(labels)))
 
+	html = "<p><strong>{:.2f}%    </strong>".format(percent)
+
+	def bold(item, char_color="black"):
+		return "<b style='color: {}' ><strong>{}</strong></b>".format(char_color, item)
+
+	for i in range(len(labels)):
+		char = original[i]
+		label = labels[i]
+		wanted = expected[i]
+		color = "black"
+		do_bold = True
+		if wanted == 1 and label == 1:
+			color = "blue"
+		if wanted == 1 and label == 0:
+			color = "red"
+		if wanted == 0 and label == 1:
+			color = "orange"
+		if wanted == 0 and label == 0:
+			do_bold = False
+
+		html += bold(char, color) if do_bold else char
+
+	html += "<p>"
+	return html
+
+
+def get_chars(x_batch, flatten=True):
+	orig = [list() for x in x_batch]
+	i = 0
+	for sub in x_batch:
+		for idx in sub:
+			orig[i].append(chr(idx))
+		i += 1
+	if flatten:
+		return np.array(orig).flatten().tolist()
+	return orig
 
 
 def run_test(sess, model, x_seq, y_seq, state):
@@ -43,17 +82,17 @@ def run_test(sess, model, x_seq, y_seq, state):
 	# x_seq = batch[0]
 	# y_seq = batch[1]
 
-	
 	try:
-		#print("x_seq shape: ", x_seq.shape, "y_seq shape: ", y_seq.shape)
+		# print("x_seq shape: ", x_seq.shape, "y_seq shape: ", y_seq.shape)
 		
-		feed = { model.input_data: x_seq, model.targets: y_seq,  model.initial_state: state }
+		feed = {model.input_data: x_seq, model.targets: y_seq}#,  model.initial_state: state}
 		probs, state, loss = sess.run([model.probs, model.final_state, model.cost], feed)
 		
 		y_seq_ = probs
 	
 		#print("y_seq_ shape: ", y_seq_.shape)
 
+		original = get_chars(x_batch=x_seq, flatten=False)
 		y_bar = list()
 
 		for item in y_seq_:
@@ -65,10 +104,21 @@ def run_test(sess, model, x_seq, y_seq, state):
 		y_bar = np.array(y_bar)
 		# accuracy = np.mean(np.equal(y_seq, y_bar))
 
+		html = "<html><body><div>"
+		html += "<h4>Blue: labeled and wanted label</h4>"
+		html += "<h4>Red: not labeled and wanted label</h4>"
+		html += "<h4>Orange: labeled and wanted no label</h4>"
+		html += "</div><div><ol>"
+		for i in range(len(original)):
+			percent = 100.0 * (np.sum(y_bar[i]) / np.sum(y_seq[i]))  # number of 1's over total
+			html += "<li> {} </li>".format(make_html(original[i], y_seq[i], y_bar[i], percent))
+		html += "</ol></div></body></html>"
 
 		try:		
 			y_seq = np.ndarray.flatten(y_seq)
 			y_bar = np.ndarray.flatten(y_bar)
+			with open("labelled.html", "w") as fout:
+				fout.write(html)
 			confusion = skmetrics.confusion_matrix(y_seq, y_bar)
 		except ValueError as ex:
 			print("Error build confusion:", ex)
@@ -100,8 +150,8 @@ def run_test(sess, model, x_seq, y_seq, state):
 		ret["sensitivity"] = sensitivity
 		ret["specificity"] = specificity
 
-		print(tp, fp, tn, fn)
-		print(tp, "/", "(", fp, "+", tp, ")")
+		# print(tp, fp, tn, fn)
+		# print(tp, "/", "(", fp, "+", tp, ")")
 		# print(ret)
 
 		return ret
@@ -109,6 +159,7 @@ def run_test(sess, model, x_seq, y_seq, state):
 	except Exception as ex:
 		print("run_test: ", ex)
 		exit(1)
+
 
 def test(args):
 	""" run the tests """
@@ -135,18 +186,15 @@ def test(args):
 	model = Model(saved_args, 1, training=False)
 
 	print("Sample model built")
-	
 
 	os.environ["CUDA_VISIBLE_DEVICES"]="0"
 
-	
 	def t_print(stuff):
 		"""pretty print stats from a list"""
 		print("\tAvg: {:.3f}".format(np.mean(stuff)))
 		print("\tMax: {:.3f}".format(np.max(stuff)))
 		print("\tMin: {:.3f}".format(np.min(stuff)))
 		print("\tStd: {:.3f}".format(np.std(stuff)))
-	
 
 	with tf.Session() as sess:
 		tf.global_variables_initializer().run()
@@ -160,9 +208,8 @@ def test(args):
 			print("Restoring...")
 			saver.restore(sess, ckpt.model_checkpoint_path)
 			print("Restored checkpoint successfully")
-			
-			
-			state = sess.run(model.cell.zero_state(saved_args.batch_size, tf.float32))
+
+			# state = sess.run(model.cell.zero_state(saved_args.batch_size, tf.float32))
 			
 			print("\ngot initial state")
 			print("\nGrabbed batches")
@@ -182,16 +229,18 @@ def test(args):
 				# x and y are => [ batch_size, seq_length ]
 				if i % 100 == 0:
 					print("On batch:", i)
-				#accuracy, _, loss = run_test(sess, model, batch[0], batch[1], state)
+
+				# accuracy, _, loss = run_test(sess, model, batch[0], batch[1], state)
 				x = batch[0]
 				y = batch[1]
-				metrics = run_test(sess, model, x, y, state)
+				metrics = run_test(sess, model, x, y, None)
 				
 				losses.append(metrics["loss"])
 				accs.append(metrics["accuracy"])
 				precs.append(metrics["precision"])
 				recalls.append(metrics["recall"])
 				i += 1
+				break
 			
 			print("\nFor {} batches".format(i))
 			print("Accuracy:")

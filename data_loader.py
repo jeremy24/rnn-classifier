@@ -4,13 +4,8 @@ from __future__ import absolute_import
 
 import codecs
 import os
-import collections
 import math
 import time
-import itertools
-import cProfile
-import multiprocessing as multi
-import concurrent.futures as cf
 # from multiprocessing import Process, RawValue, Lock
 # from multiprocessing.dummy import Pool as ThreadPool
 from six.moves import cPickle
@@ -27,6 +22,8 @@ class TextLoader(object):
 		self.seq_length = seq_length
 		self.encoding = encoding
 		self.labeler_fn = None
+		self.save_dir = save_dir
+		self.pointer = 0
 
 		self.vocab = dict()
 		self.chars = dict()
@@ -36,9 +33,12 @@ class TextLoader(object):
 		self.labels = list()
 		self.num_chars = 0
 		self.num_classes = 0
+
+		self._test_batches = None
+		self._train_batches = None
+
 		self.num_batches = 0
-		self.batches = None
-		self.test_batches = None
+		self.batches = list()
 		self.ratio = None
 
 		np.random.seed(int(time.time()))
@@ -49,21 +49,18 @@ class TextLoader(object):
 			print("User provided a labeler fn:", labeler_fn)
 			self.labeler_fn = labeler_fn
 
-		input_file = os.path.join(data_dir, "input.txt")
-		vocab_file = os.path.join(save_dir, "vocab.pkl")
-		tensor_file = os.path.join(save_dir, "data.npy")
-		train_file = os.path.join(save_dir, "train_batches.npy")
-		test_file = os.path.join(save_dir, "test_batches.npy")
+		input_dir = "./inputs"
 
-		if not (os.path.exists(vocab_file) and os.path.exists(tensor_file)):
-			print("Preprocessing data")
-			self.preprocess(input_file, vocab_file,
-							tensor_file, train_file, test_file, todo=todo)
-		else:
-			print("loading preprocessed files")
-			self.load_preprocessed(vocab_file, tensor_file,
-								   train_file, test_file)
+		# if not (os.path.exists(vocab_file) and os.path.exists(tensor_file)):
+		# 	print("Preprocessing data")
+		# 	self.preprocess(input_dir, vocab_file,
+		# 					tensor_file, train_file, test_file, todo=todo)
+		# else:
+		# 	print("loading preprocessed files")
+		# 	self.load_preprocessed(vocab_file, tensor_file,
+		# 						   train_file, test_file)
 
+		self.preprocess(input_dir, todo=todo)
 		self.reset_batch_pointer()
 
 	def preprocess_helper(self, seq, raw_str):
@@ -91,11 +88,20 @@ class TextLoader(object):
 		assert len(self.chars) == len(self.vocab), "char and vocab lens mismatch"
 		return {"x": encoded_seq, "y": labels}
 
-	def preprocess(self, input_file, vocab_file,
-				   tensor_file, train_file, test_file, todo=float("inf")):
+	def preprocess(self, input_path, todo=float("inf")):
 
-		with codecs.open(input_file, "r", encoding=self.encoding) as f:
-			data = f.read()
+		files = os.listdir(input_path)
+		files = [os.path.join(input_path, filename) for filename in files]
+		print("Files: ", files)
+
+		data = None
+
+		print("\nProcessing files:")
+		for filename in files:
+			print("\t{}".format(filename))
+			with codecs.open(filename, "r", encoding=self.encoding) as f:
+				data += f.read()
+		print("\n")
 
 		self.chars = list()
 		self.vocab = dict()
@@ -112,21 +118,16 @@ class TextLoader(object):
 			todo = int(todo)
 
 		print("Preprocessing {:,} items from data".format(todo))
-		print("Trimming data to length of todo")
 
 		data = data[:todo]
 		# flatten = lambda l: [item for sublist in l for item in sublist]
 		start = time.time()
 		seqs = list(data)
 
-		print("Data length: {:,}".format(len(data)))
-		print("Sequences converted to lists after: ", time.time() - start)
-
 		# make sure its flat
 		seqs = np.ndarray.flatten(np.array(seqs))
-		print("Flattened seqs")
 
-		pool_s = time.time()
+		label_start = time.time()
 
 		print("Starting preprocess {:,} items"
 			  .format(len(seqs)))
@@ -135,7 +136,7 @@ class TextLoader(object):
 		encoded = preprocess_data["x"]
 		labels = preprocess_data["y"]
 
-		print("Labels generated in {:,.3f}".format(time.time() - pool_s))
+		print("Labels generated in {:,.3f}".format(time.time() - label_start))
 
 		# make a reverse vocab lookup dict
 		self.reverse_vocab = {v: k for k, v in self.vocab.items()}
@@ -148,8 +149,11 @@ class TextLoader(object):
 
 		# using uint 16 to save space and because we wont have more than 60k diff chars
 
-		self.tensor = np.array(encoded, dtype=np.uint16)
-		self.labels = np.array(labels, dtype=np.uint16)
+		# self.tensor = np.array(encoded, dtype=np.uint16)
+		# self.labels = np.array(labels, dtype=np.uint16)
+
+		self.tensor = encoded
+		self.labels = labels
 
 		num_true_labels = np.sum(self.labels)
 
@@ -169,13 +173,24 @@ class TextLoader(object):
 		print("Processing took {:.3f}  vocab size: {}"
 			  .format(time.time() - start, self.vocab_size))
 
-		print("Dumping vocab to file...")
-		with open(vocab_file, 'wb') as f:
-			cPickle.dump(self.chars, f)
+		self.create_batches()
 
-		print("Saving tensor file...")
-		np.save(tensor_file, self.tensor)
-		self.create_batches(train_file, test_file)
+	def save_data(self):
+		vocab_file = os.path.join(self.save_dir, "vocab.pkl")
+		tensor_file = os.path.join(self.save_dir, "data.npy")
+		try:
+			print("Dumping vocab to file...")
+			with open(vocab_file, 'wb') as fout:
+				cPickle.dump(self.chars, fout)
+		except Exception as ex:
+			print("Error saving vocab: ", ex)
+			exit(1)
+		try:
+			print("Saving tensor file...")
+			np.save(tensor_file, self.tensor)
+		except Exception as ex:
+			print("Error saving tensor file: ", ex)
+			exit(1)
 
 	def load_preprocessed(self, vocab_file, tensor_file, train_file, test_file):
 		with open(vocab_file, 'rb') as f:
@@ -185,10 +200,10 @@ class TextLoader(object):
 		print("Loading in preprocessed tensor file...")
 		self.tensor = np.load(tensor_file)
 		print("Tensor loaded")
-		self.num_batches = int(self.tensor.size / (self.batch_size *
-												   self.seq_length))
+		# self.num_batches = int(self.tensor.size / (self.batch_size *
+		# 										   self.seq_length))
 		self.batches = np.load(train_file)
-		self.test_batches = np.load(test_file)
+		# self.test_batches = np.load(test_file)
 
 	@staticmethod
 	@format_float(precision=3)
@@ -212,37 +227,35 @@ class TextLoader(object):
 
 		print(item)
 
-	# print("X: ", z)
-	# print("Y: ", y)
+	def trim_data(self):
+		# chop off the end to make sure we have an even number of items
+		size = self.seq_length * self.batch_size
+		chop_line = len(self.tensor) % size
+		print("size: {:,}  len: {:,} chopline: {:,}".format(size, len(self.tensor), chop_line))
+		self.tensor = self.tensor[:-chop_line]
+		self.labels = self.labels[:-chop_line]
+		assert len(self.tensor) == len(self.labels)
+		self.num_batches = len(self.tensor) / size
 
-	def create_batches(self, train_file, test_file):
-		# this was changed to be set in preprocess
-		self.num_batches = int(self.tensor.size / (self.batch_size *
-												   self.seq_length))
-
-		print("Batch size changed to {:,}  have {:,} batches"
+	def create_batches(self):
+		self.trim_data()
+		print("Batch size: {:,}  have {:,} batches"
 			  .format(self.batch_size, self.num_batches))
 
 		# When the data (tensor)is too small,
 		# let's give them a better error message
-		if self.num_batches == 0:
+		if self.num_batches < 1:
 			assert False, "Not enough data. Make seq_length and batch_size small."
 
 		print("Total self.tensor size: ", self.to_gb(self.tensor.nbytes), "GB")
 
-		num_examples = self.num_batches * self.batch_size * self.seq_length
+		num_examples = int(self.num_batches * self.batch_size * self.seq_length)
+		print("Num Examples: ", num_examples)
 
-		# xdata = self.tensor[:num_examples]
-		# ydata = self.labels[:num_examples]
-
-		xdata = self.tensor[:num_examples]
-		ydata = self.labels[:num_examples]
+		xdata = np.array(self.tensor[:num_examples], dtype=np.uint16)
+		ydata = np.array(self.labels[:num_examples], dtype=np.uint16)
 
 		assert len(ydata) == len(xdata), "Data lengths don't match: {} != {}".format(len(xdata), len(ydata))
-
-		# "alias" vocab size to really mean the number of labels
-		# self.vocab_size = len(list(set(ydata)))
-		# self.num_labels = self.vocab_size
 
 		self.vocab_size = len(self.vocab)
 		self.num_classes = len(set(self.labels))
@@ -282,38 +295,57 @@ class TextLoader(object):
 		print("Dropped", dropped, "batches")
 		print("avg:", np.mean(sums), "  min:", np.min(sums), "  max: ", np.max(sums))
 		batch_members = len(y_batches[0][0]) * len(y_batches[0])
-		perc = [np.mean(sum) / batch_members for sum in sums]
+		perc = [np.mean(s) / batch_members for s in sums]
 		print("avg:", np.mean(perc), "  min:", np.min(perc),
 			  "  max: ", np.max(perc), "  median: ", np.median(perc))
 		# exit(1)
 
-		self.batches = np.array(self.batches)
+		# self.batches = np.array(self.batches)
 		print("Batches built. Shuffling...")
 		# np.random.shuffle(self.batches)
 		size = len(self.batches)
 		test_size = int(size * 0.20)
 
 		# set some data
-		self.test_batches = self.batches[:test_size]
-		self.batches = self.batches[test_size:]
-		self.num_batches = len(self.batches)
-
-		# save the batches to disk
-		np.save(train_file, self.batches)
-		np.save(test_file, self.test_batches)
-
+		# self.test_batches = self.batches[:test_size]
+		# self.batches = self.batches[test_size:]
 		print("Build batches done...")
 		self.sample_batches()
 
 		print("Batches: {}	Test Batches:  {}"
 			  .format(len(self.batches), len(self.test_batches)))
 
+	@property
+	def test_batches(self):
+		if self._test_batches is None:
+			size = int(self.num_batches * 0.20)
+			self._test_batches = self.batches[:size]
+		return self._test_batches or list()
+
+	@property
+	def train_batches(self):
+		if self._train_batches is None:
+			size = int(self.num_batches * 0.20)
+			self._train_batches = self.batches[size:]
+		return self._train_batches or list()
+
+	def save_test_train(self):
+		train_file = os.path.join(self.save_dir, "train_batches.npy")
+		test_file = os.path.join(self.save_dir, "test_batches.npy")
+		try:
+			# save the batches to disk
+			np.save(train_file, self.batches)
+			np.save(test_file, self.test_batches)
+		except Exception as ex:
+			print("Unable to save test/train data: ", ex)
+			exit(1)
+
 	def next_batch(self):
 		# x, y = self.x_batches[self.pointer], self.y_batches[self.pointer]
-		item = self.batches[self.pointer]
+		item = self.train_batches[self.pointer]
 		# make immutable
 		self.pointer += 1
-		if self.pointer == self.num_batches:
+		if self.pointer == len(self.train_batches):
 			self.reset_batch_pointer()
 		return item[0], item[1]
 

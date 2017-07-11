@@ -12,11 +12,10 @@ import gc
 import traceback
 from six.moves import cPickle
 
-from utils import TextLoader
+from data_loader import TextLoader
 from model import Model
 from data_blob import Prepositions
 import numpy as np
-import objgraph
 
 import tensorflow as tf
 
@@ -169,7 +168,7 @@ class NormalTrain(object):
 
 	def __enter__(self):
 		cost, state, _ = self.sess.run(self.args, self.feed)
-		return None
+		return state
 
 	def __exit__(self, error_type, value, trace):
 		if value:
@@ -235,38 +234,45 @@ def labeler(seq, words_to_use=5):
 	print("\tSeq length: {:,} ".format(len(seq)))
 	a = seq
 	# words = Prepositions().starts_with("b")
-	words = ["the", "of", "and", "in", "to", "a", "with", "for", "is"]
+	# words = ["the", "of", "and", "in", "to", "a", "with", "for", "is"]
 
 
 	# the word list is the top 10 most
 	# common words in the sequence
 	# print("\tSplitting")
-	# b = seq.split(" ")
-	# wc = dict()
-	# for x in b:
-	# 	if x not in wc:
-	# 		wc[x] = 0
-	# 	wc[x] += 1
-	#
-	# print("\nWords being used:")
-	# for w in sorted(wc, key=wc.get, reverse=True):
-	# 	if len(words) == words_to_use:
-	# 		break
-	# 	print("\t{}:  {:,}".format(w, wc[w]))
-	# 	words.append(w)
+	words = list()
+	b = seq.split(" ")
+	wc = dict()
+	for x in b:
+		if x not in wc:
+			wc[x] = 0
+		wc[x] += 1
+
+	print("\nWords being used:")
+	for w in sorted(wc, key=wc.get, reverse=True):
+		if len(words) == words_to_use:
+			break
+		print("\t{}:  {:,}".format(w, wc[w]))
+		words.append(w)
+
+	# words = ["a", "e", "i", "o", "u"]
+
+	# words = ["\\underline"]
+	# words =
 
 	print("\nGenerating labels based on {} words".format(len(words)))
 	# expressions = list()
 	replace_char = chr(1)
 	ret = np.zeros(len(a), dtype=np.uint8)
 
-	def make_exp(w):
+	def make_exp(w, space=True):
+		if not space:
+			return r"(" + w + ")"
 		return r"( " + w + " )"
 
-	expressions = [make_exp(x) for x in words]
+	# expressions = [make_exp(x, space=False) for x in words]
+	expressions = [r"[\\]underline"]
 
-	# expressions = [r"a", r"e", r"i", r"o", r"u"]
-	# words = ["a", "e", "i", "o", "u"]
 	# each replace string is [ XXXX ] where X is the replace_char
 	i = 0
 	for word, exp in zip(words, expressions):
@@ -302,7 +308,8 @@ def train(args):
 	print("Vocab size: ", args.vocab_size)
 	print("Num classes: ", args.num_classes)
 
-	# exit(1)
+
+	exit(1)
 
 	# check compatibility if training is continued from previously saved model
 	if args.init_from is not None:
@@ -422,52 +429,55 @@ def train(args):
 
 			start = time.time()
 
-			for batch in range(data_loader.num_batches):
+			# This will get us our initial cell state of zero
+			cell_state = None
+			step = 0
+			x, y = data_loader.next_batch()
+			feed = {model.input_data: x, model.targets: y}
+			with NormalTrain(sess, model, feed) as state:
+				cell_state = state
+
+			# after we have our "primed" network, we pass the state in
+			# from the prev step to override the zero state of the model
+			for batch in range(1, data_loader.num_batches):
 				step = epoch * data_loader.num_batches + batch
 
 				x, y = data_loader.next_batch()
-				feed = {model.input_data: x, model.targets: y}
+
+				feed = {model.input_data: x, model.targets: y, model.cell_state: cell_state}
+				# feed = {model.input_data: x, model.targets: y}
+
 
 				last_batch = batch == data_loader.num_batches - 1
 				last_epoch = epoch == args.num_epochs - 1
 
+				last_in_epoch = (step + 1) % data_loader.batch_size == data_loader.batch_size - 1
+
 				# if printing
-				if step % print_cycle == 0 and step > 0 or (last_batch and last_epoch):
+				if last_in_epoch or step == data_loader.num_batches  - 1 or step % print_cycle == 0 and step > 0 or (last_batch and last_epoch):
+					do_print = False
 					print("\n\n")
 					with PrintTrain(sess, model, summaries, feed) as item:
 						writer.add_summary(item["summary"], step)
 						end = time.time()
 
+						cell_state = item["state"]
+
 						total_time += end - start
 						avg_time_per = round(total_time / step if step > 0 else step + 1, 2)
 
-						# raw_matrix = sess.run(model.raw_matrix, feed)
 						their_confusion = sess.run(model.their_confusion, feed)
-						# print("Raw Matrix: ", raw_matrix)
-
 						print(their_confusion)
-						# assert raw_matrix["sum"] == (args.batch_size * args.seq_length), "{} != {}".format(raw_matrix["sum"], args.batch_size * args.seq_length)
-						# check_confusion(raw_matrix, their_confusion)
 
-						# only print weights data if we are using them
+							# only print weights data if we are using them
 						if args.use_weights:
-							# print("Abs diff: ", sess.run(model.absolute_prediction_diff, feed))
 							print("Scale factor: ", sess.run(model.loss_scale_factors, feed))
-							# print("Loss weights: ", sess.run(model.loss_weights, feed))
 							weights = sess.run(model.loss_weights, feed)
 							sum_weights = [np.sum(x) for x in weights]
 							print("Weights:", sum_weights)
-							# print(tf.add_n(weights))
 
 						with Confusion(sess, model, feed) as confusion_matrix:
 							pretty_print(item, step, total_steps, epoch, print_cycle, end, start, avg_time_per)
-							# print("lr base: ", sess.run(model._lr, feed))
-							# print(confusion_matrix)
-							# pretty_print_confusion(confusion_matrix)
-							# print("\nReferences:")
-							# for thing, count in objgraph.most_common_types(limit=10):
-							# 	print("\t{}: {:,}".format(thing, count))
-							# objgraph.show_growth()
 
 						start = time.time()
 
@@ -488,7 +498,7 @@ def train(args):
 					with NormalTrain(sess, model, feed):
 						pass
 
-				if step % args.save_every == 0 or (last_batch and last_epoch):
+				if last_in_epoch or step % args.save_every == 0 or (last_batch and last_epoch):
 					# save for the last result
 
 					# if trace:
@@ -496,10 +506,12 @@ def train(args):
 					#		t_file.write(trace.generate_chrome_trace_format())
 
 					save_model(args, saver, sess, step, dump=False, verbose=False)
-
+				if last_batch or last_epoch:
+					dump_args(args)
 				# increment the model step
 				# model.inc_step()
 				# sess.run(model.inc_step)
+	dump_args(args)
 
 
 if __name__ == '__main__':
