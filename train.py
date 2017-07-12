@@ -12,6 +12,7 @@ import gc
 import traceback
 from six.moves import cPickle
 
+from labeler import labeler, LabelTypes
 from data_loader import TextLoader
 from model import Model
 from data_blob import Prepositions
@@ -112,7 +113,7 @@ def pretty_print(item, step, total_steps, epoch, print_cycle, end, start, avg_ti
 	steps_left = total_steps - step
 	time_left = steps_left * avg_time_per / 60
 	str1 = "{}/{} (epoch {}), train_loss: {:.5f}, ".format(step, total_steps, epoch, item["train_loss"])
-	str2 = "lr: {:.6f}  time/{}: {:.3f}".format(item["lr"], print_cycle, end - start)
+	str2 = "lr: {:.6f}\n\ttime/{}: {:.3f}".format(item["lr"], print_cycle, end - start)
 	str3 = " time/step = {:.3f}  time left: {:.2f}m g_step: {}".format(avg_time_per, time_left, item["g_step"])
 	print(str1 + str2 + str3)
 	assert step == item["g_step"], "Steps to not equal {} != {}".format(step, item["g_step"])
@@ -222,85 +223,16 @@ def bucket_by_length(words):
 		buckets[len(word)].append(word)
 	return buckets
 
-
-# generate labels
-# first we bucket the words based on size and then mash them
-# all into one regex for speed
-# we have to do this in order to know the right number of replacement
-# chars to sub into the string
-def labeler(seq, words_to_use=5):
-	"""Generate labels for a given sequence"""
-	print("\nLabeler:")
-	print("\tSeq length: {:,} ".format(len(seq)))
-	a = seq
-	# words = Prepositions().starts_with("b")
-	# words = ["the", "of", "and", "in", "to", "a", "with", "for", "is"]
-
-
-	# the word list is the top 10 most
-	# common words in the sequence
-	# print("\tSplitting")
-	# words = list()
-	# b = seq.split(" ")
-	# wc = dict()
-	# for x in b:
-	# 	if x not in wc:
-	# 		wc[x] = 0
-	# 	wc[x] += 1
-	#
-	# print("\nWords being used:")
-	# for w in sorted(wc, key=wc.get, reverse=True):
-	# 	if len(words) == words_to_use:
-	# 		break
-	# 	if len(w) < 3:
-	# 		continue
-	# 	print("\t[{}]:  {:,}".format(w, wc[w]))
-	# 	words.append(w)
-
-	words = ["a", "e", "i", "o", "u"]
-
-	# words = ["\\underline"]
-	# words =
-
-	print("\nGenerating labels based on {} words".format(len(words)))
-	# expressions = list()
-	replace_char = chr(1)
-	ret = np.zeros(len(a), dtype=np.uint8)
-
-	def make_exp(w, space=True):
-		if not space:
-			return r"(" + w + ")"
-		return r"( " + w + " )"
-
-	expressions = [make_exp(x, space=False) for x in words]
-	# expressions = [r"[\\]underline"]
-
-	# each replace string is [ XXXX ] where X is the replace_char
-	i = 0
-	for word, exp in zip(words, expressions):
-		gc.collect()
-		replace_string = replace_char * len(word) # (" " + replace_char * len(word) + " ")
-		a = re.sub(exp, replace_string, a)
-		print("\t{:02d}: Done with: {}".format(i, word))
-		i += 1
-
-	print("\n\tDone with all replacements")
-
-	for i in range(len(a)):
-		ret[i] = a[i] == replace_char
-
-	assert len(ret) == len(seq)
-	return ret
-
-
 def train(args):
 	one_mil = 1000000
 
 	todo = 1 * one_mil
 
+
+
 	data_loader = TextLoader(args.data_dir, args.save_dir,
 							 args.batch_size, args.seq_length, todo=todo,
-							 labeler_fn=labeler)
+							 labeler_fn=labeler, is_training=True)
 
 	args.vocab_size = data_loader.vocab_size
 	args.batch_size = data_loader.batch_size
@@ -413,7 +345,6 @@ def train(args):
 		# run_meta = tf.RunMetadata()
 
 		data_loader.reset_batch_pointer()
-
 
 		trace = None
 

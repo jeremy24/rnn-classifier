@@ -20,21 +20,21 @@ if	count $argv > /dev/null
 	set dir $argv[1]	
 	
 	set num_tests 2000
-	set print_cycle 500
-	set lr 0.1
-	set out_prob 0.6
-	set in_prob 0.6
+	set print_cycle 100
+	set lr 0.2
+	set out_prob 0.9
+	set in_prob 0.9
 	set num_layers 1
 	set rnn_size 200
 	set gpu 0 
 	set seq_len 64
-	set num_epochs 500
-	set save_every 500
+	set num_epochs 10
+	set save_every 100
 	set data_dir .
 	set log_dir $dir"/logs"
 	set batch_size 100
 	set max_grad 5
-	set decay_rate .85
+	set decay_rate 1
 	set model "lstm"
 	set use_weights 1
 

@@ -6,6 +6,7 @@ import codecs
 import os
 import math
 import time
+import re
 # from multiprocessing import Process, RawValue, Lock
 # from multiprocessing.dummy import Pool as ThreadPool
 from six.moves import cPickle
@@ -16,7 +17,8 @@ from decorators import *
 
 class TextLoader(object):
 	def __init__(self, data_dir, save_dir, batch_size, seq_length,
-				 encoding='utf-8', todo=1000000, labeler_fn=None):
+				 encoding='utf-8', todo=1000000,
+				 labeler_fn=None, is_training=False):
 		self.data_dir = data_dir
 		self.batch_size = batch_size
 		self.seq_length = seq_length
@@ -41,26 +43,40 @@ class TextLoader(object):
 		self.batches = list()
 		self.ratio = None
 
-		np.random.seed(int(time.time()))
+		self.replace_multiple_spaces = True
+		self.is_training = bool(is_training)
 
-		if labeler_fn is None:
+		# make it predictably random
+		# np.random.seed(int(time.time()))
+		np.random.seed(5)
+
+		if labeler_fn is None and self.is_training:
+			print("\nNO LABELER FUNCTION PROVIDED\n")
 			self.labeler_fn = lambda l: [str(s).isalpha() for s in l]
+		elif not self.is_training:
+			print("\nLabeler function not needed since model is not training")
+			# This will now throw an error if something tries to call it
+			# since we should not ever be labeling data if not training
+			# at least for now
+			self.labeler_fn = None
 		else:
 			print("User provided a labeler fn:", labeler_fn)
 			self.labeler_fn = labeler_fn
 
 		input_dir = "./inputs"
 
-		# if not (os.path.exists(vocab_file) and os.path.exists(tensor_file)):
-		# 	print("Preprocessing data")
-		# 	self.preprocess(input_dir, vocab_file,
-		# 					tensor_file, train_file, test_file, todo=todo)
-		# else:
-		# 	print("loading preprocessed files")
-		# 	self.load_preprocessed(vocab_file, tensor_file,
-		# 						   train_file, test_file)
+		if self.is_training:
+			if self.have_saved_data():
+				self.load_preprocessed()
+			else:
+				self.preprocess(input_dir, todo=todo)
+		else:
+			if self.have_saved_data():
+				self.load_preprocessed()
+			else:
+				print("\nWe are not training and we have no preprocessed data!\n")
+				assert False
 
-		self.preprocess(input_dir, todo=todo)
 		self.reset_batch_pointer()
 
 	def preprocess_helper(self, seq, raw_str):
@@ -119,6 +135,15 @@ class TextLoader(object):
 			todo = int(todo)
 
 		print("Preprocessing {:,} items from data".format(todo))
+		print("Replacing spaces: {}".format(self.replace_multiple_spaces))
+		print("Trimming data to length of todo")
+
+		if self.replace_multiple_spaces == True:
+			print("\nStripping spaces")
+			print("\tBefore: ", len(data))
+			data = re.sub(r"[\s]{2,}", " ", data)
+			print("\tAfter: ", len(data))
+
 
 		data = data[:todo]
 		# flatten = lambda l: [item for sublist in l for item in sublist]
@@ -176,37 +201,9 @@ class TextLoader(object):
 		print("Processing took {:.3f}  vocab size: {}"
 			  .format(time.time() - start, self.vocab_size))
 
+		self.save_vocab_data()
 		self.create_batches()
 
-	def save_data(self):
-		vocab_file = os.path.join(self.save_dir, "vocab.pkl")
-		tensor_file = os.path.join(self.save_dir, "data.npy")
-		try:
-			print("Dumping vocab to file...")
-			with open(vocab_file, 'wb') as fout:
-				cPickle.dump(self.chars, fout)
-		except Exception as ex:
-			print("Error saving vocab: ", ex)
-			exit(1)
-		try:
-			print("Saving tensor file...")
-			np.save(tensor_file, self.tensor)
-		except Exception as ex:
-			print("Error saving tensor file: ", ex)
-			exit(1)
-
-	def load_preprocessed(self, vocab_file, tensor_file, train_file, test_file):
-		with open(vocab_file, 'rb') as f:
-			self.chars = cPickle.load(f)
-		self.vocab_size = len(self.chars)
-		self.vocab = dict(zip(self.chars, range(len(self.chars))))
-		print("Loading in preprocessed tensor file...")
-		self.tensor = np.load(tensor_file)
-		print("Tensor loaded")
-		# self.num_batches = int(self.tensor.size / (self.batch_size *
-		# 										   self.seq_length))
-		self.batches = np.load(train_file)
-		# self.test_batches = np.load(test_file)
 
 	@staticmethod
 	@format_float(precision=3)
@@ -317,20 +314,30 @@ class TextLoader(object):
 
 		print("Batches: {}	Test Batches:  {}"
 			  .format(len(self.batches), len(self.test_batches)))
+		self.save_test_train()
+		if not self.have_saved_data():
+			print("\nData failed to save!\n")
+			exit(1)
 
 	@property
 	def test_batches(self):
 		if self._test_batches is None:
+			if not self.is_training:
+				msg = "Don't have testing batches from file"
+				raise Exception(msg)
 			size = int(self.num_batches * 0.20)
 			self._test_batches = self.batches[:size]
-		return self._test_batches or list()
+		return self._test_batches
 
 	@property
 	def train_batches(self):
 		if self._train_batches is None:
+			if not self.is_training:
+				msg = "Don't have training batches from file"
+				raise Exception(msg)
 			size = int(self.num_batches * 0.20)
 			self._train_batches = self.batches[size:]
-		return self._train_batches or list()
+		return self._train_batches
 
 	def save_test_train(self):
 		train_file = os.path.join(self.save_dir, "train_batches.npy")
@@ -342,6 +349,43 @@ class TextLoader(object):
 		except Exception as ex:
 			print("Unable to save test/train data: ", ex)
 			exit(1)
+
+	def save_vocab_data(self):
+		vocab_file = os.path.join(self.save_dir, "vocab.pkl")
+		try:
+			print("Dumping vocab to file...")
+			with open(vocab_file, 'wb') as fout:
+				cPickle.dump(self.chars, fout)
+		except Exception as ex:
+			print("Error saving vocab: ", ex)
+			exit(1)
+
+	def have_saved_data(self):
+		train_file = os.path.join(self.save_dir, "train_batches.npy")
+		test_file = os.path.join(self.save_dir, "test_batches.npy")
+		vocab_file = os.path.join(self.save_dir, "vocab.pkl")
+		return os.path.exists(train_file) and os.path.exists(test_file) and os.path.exists(vocab_file)
+
+	def load_preprocessed(self):
+		train_file = os.path.join(self.save_dir, "train_batches.npy")
+		test_file = os.path.join(self.save_dir, "test_batches.npy")
+		vocab_file = os.path.join(self.save_dir, "vocab.pkl")
+
+		with open(vocab_file, 'rb') as f:
+			self.chars = cPickle.load(f)
+
+		self.vocab_size = len(self.chars)
+		self.vocab = dict(zip(self.chars, range(len(self.chars))))
+
+
+		print("Loading in preprocessed test and train files...")
+		print("Tensor loaded")
+		self._train_batches = np.load(train_file)
+		self._test_batches = np.load(test_file)
+		assert len(self._test_batches) > 0
+		assert len(self._train_batches) > 0
+		self.batches = None
+		self.num_batches = None
 
 	def next_batch(self):
 		# x, y = self.x_batches[self.pointer], self.y_batches[self.pointer]

@@ -29,6 +29,8 @@ class Model(object):
 			ret = [self.add_dropout(cell, in_prob, out_prob) for cell in cells]
 			return ret
 
+	# this currently isn't being used right now
+	# due to the overhaul to use a bi-directional RNN
 	def build_outputs(self, inputs):
 		"""
 		:param inputs:
@@ -118,7 +120,8 @@ class Model(object):
 
 	def build_one_cell(self, dropout=True):
 		c = self.cell_fn(self.args.rnn_size)
-		c = self.add_dropout(c, self.args.input_keep_prob, self.args.output_keep_prob)
+		if dropout:
+			c = self.add_dropout(c, self.args.input_keep_prob, self.args.output_keep_prob)
 		return c
 
 	def build_one_layer(self):
@@ -189,7 +192,6 @@ class Model(object):
 		self._loss = None
 		self._cost = None
 
-
 		self.cell_fn = rnn.LSTMCell
 
 		print("\nSetting self.lr = {:.5}".format(args.learning_rate))
@@ -203,18 +205,6 @@ class Model(object):
 		# self.cell_fn = rnn.GRUCell
 		# self.cell_fn = rnn.IntersectionRNNCell
 		# self.cell_fn = rnn.NASCell
-
-
-		# with tf.name_scope("cells"):
-		# 	forward_cells = self.build_cells()
-		# 	backward_cells = self.build_cells()
-		# 	self.cell = tf.nn.bidirectional_dynamic_rnn(cell_fw=forward_cells,
-		# 												cell_bw=backward_cells,
-		# 												dtype=self.gpu_type,
-		# 												sequence_length=self.seq_length)
-
-
-
 
 		print("Setting self.num_batches")
 		self.num_batches = num_batches
@@ -259,7 +249,6 @@ class Model(object):
 		self.cell_zero_state = (self.forward_cells.zero_state(self.args.batch_size, self.gpu_type),
 							  self.backward_cells.zero_state(self.args.batch_size, self.gpu_type))
 
-
 		self.cell_state = (self.forward_cells.zero_state(self.args.batch_size, self.gpu_type),
 							  self.backward_cells.zero_state(self.args.batch_size, self.gpu_type))
 
@@ -276,16 +265,6 @@ class Model(object):
 
 		tf.summary.histogram("foward_state", self.cell_state[0])
 		tf.summary.histogram("backward_state", self.cell_state[1])
-
-		# if we are training, then make the last gotten state the new
-		# initial state, else we are sampling or testing and we want
-		# the starting state to be zero anyways
-		# if self.is_training:
-		# 	self.cell_state = self.last_state
-		# else:
-		# 	self.cell_state = (self.forward_cells.zero_state(self.args.batch_size, self.gpu_type),
-		# 					  self.backward_cells.zero_state(self.args.batch_size, self.gpu_type))
-
 
 		print(output)
 		# exit(1)
@@ -333,27 +312,6 @@ class Model(object):
 		logits_shape = [self.args.batch_size, self.args.seq_length, self.args.num_classes]
 		self.logits = tf.reshape(self.logits, logits_shape)
 
-		# with tf.name_scope("compute_loss"):
-		# 	# loss_weights = tf.ones([self.args.batch_size, self.args.seq_length])
-		# 	# self.loss = s2s.sequence_loss(split_logits, tf.to_int32(self.targets),
-		# 	#							loss_weights, name="compute_loss")
-		#
-		# 	onehots = tf.one_hot(indices=tf.to_int32(self.targets),
-		# 						 depth=self.args.vocab_size, dtype=tf.int32)
-		# 	# self.loss = tf.losses.softmax_cross_entropy(onehot_labels=onehots, logits=self.logits)
-		#
-		# 	self.loss = tf.nn.weighted_cross_entropy_with_logits(targets=onehots, logits=self.logits, pos_weight=3.0)
-		#
-		# 	print("Vocab size:", self.args.vocab_size)
-		# 	print("logits shape: ", self.logits.shape)
-		# 	print("Targets shape: ", self.targets.shape)
-		#
-		# 	# self.confusion = self.compute_confusion(self.logits, tf.to_int32(self.targets))
-		# # self.loss = -self.confusion["precision"]
-
-		# self.final_state = last_state
-		# print(self.lr)
-
 		# self._lr = tf.Variable(self.args.learning_rate, name="lr", dtype=tf.float32, trainable=False)
 		self.decay_rate = float(self.args.decay_rate)
 
@@ -367,9 +325,9 @@ class Model(object):
 
 		self.lr_decay_fn = tf.train.exponential_decay(self.args.learning_rate,
 												global_step=tf.assign_add(self.global_step, 1, use_locking=True, name="inc_global_step"),
-												decay_steps=self.num_batches // 2,
+												decay_steps=self.num_batches,
 												decay_rate=self.decay_rate,
-												staircase=True, name="lr")
+												staircase=False, name="lr")
 
 		# don't allow the learning rate to go below a certain minimum
 		self.lr = self.args.learning_rate
@@ -467,7 +425,7 @@ class Model(object):
 
 		print("Returning loss")
 		# scale it up
-		return self._loss + self.false_negative_loss_scale_factor  # tf.losses.get_total_loss()  # self._loss
+		return self._loss  # + self.false_negative_loss_scale_factor  # tf.losses.get_total_loss()  # self._loss
 
 	@define_scope
 	def raw_matrix(self):
@@ -554,31 +512,28 @@ class Model(object):
 		true_negatives = tf.to_float(tf.logical_and(tf.logical_not(preds), tf.logical_not(targs)))
 		true_positives = tf.to_float(tf.logical_and(preds, targs))
 
-		# false_negatives = tf.to_float(tf.logical_and(negatives, falses))
-		# false_positives = tf.to_float(tf.logical_and(positives, falses))
-		#
-		# true_positives = tf.to_float(tf.logical_and(positives, trues))
-		# true_negatives = tf.to_float(tf.logical_and(negatives, trues))
-
 		self.false_negatives = tf.to_int32(tf.reduce_sum(false_negatives))
 		self.true_positives = tf.to_int32(tf.reduce_sum(true_positives))
 
 		# make sure no zeros end up in the weights matrix
-		scale = tf.cond(tf.greater(self.false_negative_loss_scale_factor, 0),
+		scale_factor = tf.cond(tf.greater(self.false_negative_loss_scale_factor, 0),
 						true_fn=lambda: self.false_negative_loss_scale_factor,
 						false_fn=lambda: 1.0)
 
+		print("Capping FN scale factor at: ", self.args.label_ratio)
+		scale = tf.cond(tf.greater(scale_factor, self.args.label_ratio),
+						true_fn=lambda: tf.to_float(self.args.label_ratio),
+						false_fn=lambda: scale_factor)
+
 		# scale = tf.add(scale, self.label_ratio)
 
-		weighted_fp = tf.multiply(false_positives, 2.0)
-		weighted_tp = tf.multiply(true_positives, 0.8)
+		weighted_fp = tf.multiply(false_positives, 1.2)
+		weighted_tp = tf.multiply(true_positives, .8)
 
 		weighted_tn = tf.multiply(true_negatives, 1.0)
 		weighted_fn = tf.multiply(false_negatives, scale)
 
-
 		# the above weights will punish false negatives and reward true positives
-
 		return [weighted_tp, weighted_tn, weighted_fn, weighted_fp]  # weights
 
 	# @define_scope
@@ -594,9 +549,10 @@ class Model(object):
 	def loglog(item):
 		return tf.log(tf.log(tf.to_float(item)))
 
-	def fn_punish(self, number):
+	@staticmethod
+	def fn_punish(number):
 		# return number / 2.0
-		return tf.log(number) #* ( 1.0 / self.args.label_ratio)
+		return tf.log(number)
 
 	@define_scope(scope="scale_factor")
 	def false_negative_loss_scale_factor(self):
@@ -609,13 +565,13 @@ class Model(object):
 		if self.false_negatives is None:
 			raise Exception("Cannot get loss_scale_factor, model.false_negatives is undefined ")
 
-		as_float = tf.to_float(tf.abs(self.false_negatives))
+		value = tf.to_float(tf.abs(self.false_negatives))
 		# value = tf.Variable(1.0, dtype=self.gpu_type, name="loss_scale_factor", trainable=False)
 		# if its zero, return one (no punishment) since log(0) is undefined
 		# this avoids NaN weights
-		cond = tf.cond(tf.equal(as_float, 0.0),
+		cond = tf.cond(tf.equal(value, 0.0),
 					   true_fn=lambda: 1.0,
-					   false_fn=lambda: self.fn_punish(as_float))
+					   false_fn=lambda: self.fn_punish(value))
 		tf.summary.scalar(name="loss_scale_factor", tensor=cond)
 		return cond  # tf.assign(value, cond)
 
@@ -656,7 +612,6 @@ class Model(object):
 	@ifnotdefined
 	def confusion(self):
 		return {"accuracy": self.accuracy, "precision": self.precision, "recall": self.recall}
-
 
 	@define_scope
 	def hardmax(self):
@@ -710,7 +665,6 @@ class Model(object):
 			ret += prediction
 			char = prediction
 		return ret
-
 
 	def _old_sample(self, sess, chars, vocab, num=200, prime='The ', sampling_type=0):
 		state = sess.run(self.cell.zero_state(1, tf.float32))
