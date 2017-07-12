@@ -107,7 +107,7 @@ class TextLoader(object):
 	def preprocess(self, input_path, todo=float("inf")):
 
 		files = os.listdir(input_path)
-		files = [os.path.join(input_path, filename) for filename in files]
+		files = [os.path.join(input_path, filename) for filename in files if filename[0] != "."]
 		print("Files: ", files)
 
 		data = None
@@ -116,8 +116,12 @@ class TextLoader(object):
 		for filename in files:
 			print("\t{}".format(filename))
 			data = data + "\n\n" if data is not None else ""
-			with codecs.open(filename, "r", encoding=self.encoding) as f:
-				data += f.read()
+			with open(filename, "r") as f:
+				for line in f:
+					data += line
+			# with codecs.open(filename, "r", encoding=self.encoding) as f:
+			# 	data += f.read()
+
 		print("\n")
 
 		self.chars = list()
@@ -141,9 +145,8 @@ class TextLoader(object):
 		if self.replace_multiple_spaces == True:
 			print("\nStripping spaces")
 			print("\tBefore: ", len(data))
-			data = re.sub(r"[\s]{2,}", " ", data)
+			data = re.sub(r"[ ]{2,}", " ", data)
 			print("\tAfter: ", len(data))
-
 
 		data = data[:todo]
 		# flatten = lambda l: [item for sublist in l for item in sublist]
@@ -180,6 +183,7 @@ class TextLoader(object):
 
 		self.tensor = encoded
 		self.labels = labels
+
 
 		num_true_labels = np.sum(self.labels)
 
@@ -230,10 +234,11 @@ class TextLoader(object):
 	def trim_data(self):
 		# chop off the end to make sure we have an even number of items
 		size = self.seq_length * self.batch_size
-		chop_line = len(self.tensor) % size
+		chop_line = (len(self.tensor) % size)
+		chop_line = len(self.tensor) - chop_line
 		print("size: {:,}  len: {:,} chopline: {:,}".format(size, len(self.tensor), chop_line))
-		self.tensor = self.tensor[:-chop_line]
-		self.labels = self.labels[:-chop_line]
+		self.tensor = self.tensor[:chop_line]
+		self.labels = self.labels[:chop_line]
 		assert len(self.tensor) == len(self.labels)
 		self.num_batches = len(self.tensor) // size
 
@@ -249,11 +254,10 @@ class TextLoader(object):
 
 		print("Total self.tensor size: ", self.to_gb(self.tensor.nbytes), "GB")
 
-		num_examples = int(self.num_batches * self.batch_size * self.seq_length)
-		print("Num Examples: ", num_examples)
+		print("Num Batches to make: ", self.num_batches)
 
-		xdata = np.array(self.tensor[:num_examples], dtype=np.uint16)
-		ydata = np.array(self.labels[:num_examples], dtype=np.uint16)
+		xdata = np.array(self.tensor, dtype=np.uint16)
+		ydata = np.array(self.labels, dtype=np.uint16)
 
 		assert len(ydata) == len(xdata), "Data lengths don't match: {} != {}".format(len(xdata), len(ydata))
 
@@ -269,10 +273,30 @@ class TextLoader(object):
 
 		assert len(ydata) == len(xdata)
 
-		x_batches = np.split(xdata.reshape(self.batch_size, -1),
-							 self.num_batches, 1)
-		y_batches = np.split(ydata.reshape(self.batch_size, -1),
-							 self.num_batches, 1)
+		print("len: ", len(xdata))
+
+		# x_batches = np.split(xdata.reshape(self.batch_size, -1),
+		# 					 self.num_batches, 1)
+		# y_batches = np.split(ydata.reshape(self.batch_size, -1),
+		# 					 self.num_batches, 1)
+
+
+		size = int( len(xdata) / (self.seq_length * self.batch_size))
+
+		print("Splitting {} into {} chunks".format(len(xdata), size))
+		x_batches = np.split(xdata, size)
+		x_batches = [ np.split(x, self.seq_length) for x in x_batches]
+
+		z = x_batches[0]
+		print([1 for x in z[0] if x == ord("\n")])
+
+		print("".join([chr(a) for a in z[0]]))
+		print("".join([chr(a) for a in z[1]]))
+		print("".join([chr(a) for a in z[2]]))
+		print("".join([chr(a) for a in z[3]]))
+		print("".join([chr(a) for a in z[4]]))
+		exit(1)
+
 
 		self.batches = list()
 		sums = list()

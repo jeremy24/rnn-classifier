@@ -367,6 +367,8 @@ class Model(object):
 		tf.summary.scalar("loss", self.loss)
 		tf.summary.scalar("false_negatives", self.false_negatives)
 		tf.summary.scalar("true_positives", self.true_positives)
+		tf.summary.scalar("false_positives", self.false_positives)
+		tf.summary.scalar("true_negatives", self.true_negatives)
 
 		self.add_summaries(self.probs, "probability")
 
@@ -525,6 +527,8 @@ class Model(object):
 						true_fn=lambda: tf.to_float(self.args.label_ratio),
 						false_fn=lambda: scale_factor)
 
+		tf.summary.scalar("loss_scale_used", scale)
+
 		# scale = tf.add(scale, self.label_ratio)
 
 		weighted_fp = tf.multiply(false_positives, 1.2)
@@ -572,7 +576,7 @@ class Model(object):
 		cond = tf.cond(tf.equal(value, 0.0),
 					   true_fn=lambda: 1.0,
 					   false_fn=lambda: self.fn_punish(value))
-		tf.summary.scalar(name="loss_scale_factor", tensor=cond)
+		tf.summary.scalar(name="loss_scale_computed", tensor=cond)
 		return cond  # tf.assign(value, cond)
 
 	@ifnotdefined
