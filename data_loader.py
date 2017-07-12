@@ -143,9 +143,12 @@ class TextLoader(object):
 		print("Trimming data to length of todo")
 
 		if self.replace_multiple_spaces == True:
-			print("\nStripping spaces")
+			print("\nStripping multiple newlines")
 			print("\tBefore: ", len(data))
-			data = re.sub(r"[ ]{2,}", " ", data)
+			# data = re.sub(r"[\n]{3,}", "\n", data)
+			data = re.sub(r"[\t]{2}", "\t", data)
+			data = re.sub(r"[\t]{2}", "\t", data)
+			data = re.sub(r"[\n]{2}", "\n", data)
 			print("\tAfter: ", len(data))
 
 		data = data[:todo]
@@ -285,18 +288,24 @@ class TextLoader(object):
 
 		print("Splitting {} into {} chunks".format(len(xdata), size))
 		x_batches = np.split(xdata, size)
-		x_batches = [ np.split(x, self.seq_length) for x in x_batches]
+		x_batches = [ np.split(x, int(len(x) / self.seq_length)) for x in x_batches]
+
+		y_batches = np.split(ydata, size)
+		y_batches = [ np.split(y, int(len(y) / self.seq_length)) for y in y_batches]
+
+		print("\n{} batches of {} items with {} length strings\n".format(
+			len(x_batches),
+			len(x_batches[0]),
+			len(x_batches[0][0])
+		))
 
 		z = x_batches[0]
-		print([1 for x in z[0] if x == ord("\n")])
-
-		print("".join([chr(a) for a in z[0]]))
-		print("".join([chr(a) for a in z[1]]))
-		print("".join([chr(a) for a in z[2]]))
-		print("".join([chr(a) for a in z[3]]))
-		print("".join([chr(a) for a in z[4]]))
-		exit(1)
-
+		print("\nA sample of the data: (## signifies the boundaries between sequences)\n")
+		print("{}##{}##{}##{}##{}##".format("".join([chr(a) for a in z[0]]),
+				"".join([chr(a) for a in z[1]]),
+				"".join([chr(a) for a in z[2]]),
+				"".join([chr(a) for a in z[3]]),
+				"".join([chr(a) for a in z[4]])).replace("\t", "\t"))
 
 		self.batches = list()
 		sums = list()

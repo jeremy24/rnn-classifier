@@ -64,6 +64,10 @@ def make_html(original, expected, labels):
 		wanted = expected[i]
 		if char == " " and (label or wanted):
 			char = "_"
+		if char == "\n" and (label or wanted):
+			char = "(N)"
+		if char == "\t" and (label or wanted):
+			char = "(T)"
 		color = "black"
 		do_bold = True
 		if wanted == 1 and label == 1:
@@ -83,8 +87,13 @@ def make_html(original, expected, labels):
 	for i in range(len(labels)):
 		char = original[i]
 		wanted = expected[i]
-		if char == " " and wanted:
+		label = labels[i]
+		if char == " " and (wanted or label):
 			char = "_"
+		if char == "\n" and (wanted or label):
+			char = "(N)"
+		if char == "\t" and (wanted or label):
+			char = "(T)"
 		wanted = expected[i]
 		do_bold = False
 		if wanted == 1:
