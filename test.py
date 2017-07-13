@@ -1,22 +1,20 @@
 """ test a tensorflow model """
 
-from __future__ import print_function
-from __future__ import division
 from __future__ import absolute_import
+from __future__ import division
+from __future__ import print_function
 
 import argparse
 import os
-import jinja2 as jinja
 
+import jinja2 as jinja
+import numpy as np
+import sklearn.metrics as skmetrics
+import tensorflow as tf
 from six.moves import cPickle
 
-import numpy as np
-import tensorflow as tf
-import sklearn.metrics as skmetrics
-
-# my stuff
-from model import Model
 from data_loader import TextLoader
+from model import Model
 
 
 def main():
@@ -54,7 +52,6 @@ def make_html(original, expected, labels):
 		header = jinja.Template(fin.read())
 		render = header.render(fn=fn, fp=fp, tn=tn, tp=tp)
 		html += render
-
 
 	# html += "<p><strong>True Positives:   {:.2f}% </strong></p>".format(tp)
 	# html += "<p><strong>False Positives:  {:.2f}% </strong></p>".format(fp)
@@ -171,7 +168,7 @@ def run_test(sess, model, x_seq, y_seq, args, state, number=0):
 
 		params = {
 			"label_ratio": round(args.label_ratio, 3),
-			"label_ratio_percent": round( 1.0 / args.label_ratio * 100.0, 3),
+			"label_ratio_percent": round(1.0 / args.label_ratio * 100.0, 3),
 			"num_epochs": args.num_epochs,
 			"batch_size": args.batch_size,
 			"decay_rate": args.decay_rate,
@@ -179,7 +176,7 @@ def run_test(sess, model, x_seq, y_seq, args, state, number=0):
 			"vocab_size": args.vocab_size,
 			"out_prob": args.output_keep_prob,
 			"in_prob": args.input_keep_prob,
-			"lr":  args.learning_rate,
+			"lr": args.learning_rate,
 			"num_layers": args.num_layers,
 			"model_type": args.model,
 			"num_params": args.num_params,
@@ -261,7 +258,6 @@ def test(args):
 
 	with open(os.path.join(args.save_dir, 'config.pkl'), 'rb') as fin:
 		saved_args = cPickle.load(fin)
-
 
 	print("Saved args: ", saved_args)
 
@@ -348,6 +344,7 @@ def test(args):
 			t_print(recalls)
 		else:
 			print("\nInvalid checkpoint file")
+
 
 if __name__ == '__main__':
 	main()
