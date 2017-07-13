@@ -21,14 +21,14 @@ if	count $argv > /dev/null
 	
 	set num_tests 2000
 	set print_cycle 100
-	set lr 0.2
+	set lr 0.005
 	set out_prob 0.8
 	set in_prob 0.8
 	set num_layers 1
 	set rnn_size 200
 	set gpu 0 
-	set seq_len 64
-	set num_epochs 25
+	set seq_len 35
+	set num_epochs 15
 	set save_every 100
 	set data_dir .
 	set log_dir $dir"/logs"
@@ -38,11 +38,15 @@ if	count $argv > /dev/null
 	set model "lstm"
 	set use_weights 1
 
-	echo "Making directories..."
+	set init_from ""
+    set init 0
+
+    set input_dir "./inputs/"
 
 	set do_delete 0
 	set do_test 0
 	
+    set no_delete = 0
 
 	for arg in $argv
 		switch "$arg"
@@ -52,7 +56,17 @@ if	count $argv > /dev/null
 				set do_test 1
 			case --no_weights
 				set use_weights 0
-		end
+			case --short
+				set num_epochs 1
+			case --long
+				set num_epochs 10
+			case --medium
+				set num_epochs 5
+			case --init
+			    set init 1
+			case --no_delete
+			    set no_delete 1
+			end
 	end	
 
 
@@ -75,16 +89,31 @@ if	count $argv > /dev/null
 
 	set save_dir $dir"/save"
 
+
+	echo "Making save directories..."
+	echo $dir $save_dir $log_dir
 	mkdir -p $dir $save_dir $log_dir
-	
-	echo $dir $save_dir $log_dir	
+
+
+    if [ $init = 1 ]
+        set init_from $save_dir
+        echo \n"Initializing a saved model from "$init_from
+    end
+
+
+    if not test -d $input_dir
+        echo \n"Inputs directory does not exist: "$input_dir
+        exit
+    end
 
 	echo "Launching the model..."
-	
-	python train.py --model=$model --use_weights=$use_weights --decay_rate=$decay_rate --grad_clip=$max_grad --batch_size=$batch_size --log_dir=$log_dir --data_dir=$data_dir --save_dir=$save_dir --print_cycle=$print_cycle --seq_length=$seq_len --num_epochs=$num_epochs --learning_rate=$lr --save_every=$save_every --output_keep_prob=$out_prob --input_keep_prob=$in_prob --num_layers=$num_layers --rnn_size=$rnn_size --gpu=$gpu
+	python train.py --init_from=$init_from   --model=$model --use_weights=$use_weights --decay_rate=$decay_rate --max_gradient=$max_grad --batch_size=$batch_size --log_dir=$log_dir --data_dir=$data_dir --save_dir=$save_dir --print_cycle=$print_cycle --seq_length=$seq_len --num_epochs=$num_epochs --learning_rate=$lr --save_every=$save_every --output_keep_prob=$out_prob --input_keep_prob=$in_prob --num_layers=$num_layers --rnn_size=$rnn_size --gpu=$gpu
 
 
-	#chmod 550 $save_dir
+    if [ $no_delete = 1 ]
+        echo "Changing model mode to 550"
+        chmod -R $save_dir
+    end
 
 	#python test.py --save_dir=$save_dir -n $num_tests
 

@@ -18,8 +18,10 @@ nips_papers
 *.pkl
 *.html
 
+
 # but include the pip packages
 !requirements.txt
+!partials/
 
 # Distribution / packaging
 .Python

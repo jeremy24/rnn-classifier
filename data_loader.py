@@ -334,7 +334,7 @@ class TextLoader(object):
 		# exit(1)
 
 		# self.batches = np.array(self.batches)
-		print("Batches built. Shuffling...")
+		# print("Batches built. Shuffling...")
 		# np.random.shuffle(self.batches)
 		size = len(self.batches)
 		test_size = int(size * 0.20)
@@ -360,6 +360,7 @@ class TextLoader(object):
 				raise Exception(msg)
 			size = int(self.num_batches * 0.20)
 			self._test_batches = self.batches[:size]
+
 		return self._test_batches
 
 	@property
@@ -397,7 +398,16 @@ class TextLoader(object):
 		train_file = os.path.join(self.save_dir, "train_batches.npy")
 		test_file = os.path.join(self.save_dir, "test_batches.npy")
 		vocab_file = os.path.join(self.save_dir, "vocab.pkl")
-		return os.path.exists(train_file) and os.path.exists(test_file) and os.path.exists(vocab_file)
+		if not os.path.exists(train_file):
+			print("Don't have train file:", train_file)
+			return False
+		if not os.path.exists(test_file):
+			print("Don't have test file:", test_file)
+			return False
+		if not os.path.exists(vocab_file):
+			print("Don't have vocab file:", vocab_file)
+			return False
+		return True
 
 	def load_preprocessed(self):
 		train_file = os.path.join(self.save_dir, "train_batches.npy")
@@ -409,7 +419,6 @@ class TextLoader(object):
 
 		self.vocab_size = len(self.chars)
 		self.vocab = dict(zip(self.chars, range(len(self.chars))))
-
 
 		print("Loading in preprocessed test and train files...")
 		print("Tensor loaded")
@@ -432,5 +441,5 @@ class TextLoader(object):
 	def reset_batch_pointer(self):
 		print("Reseting batch pointer...")
 		self.pointer = 0
-		print("Shuffling the batches...")
+		# print("Shuffling the batches...")
 		# np.random.shuffle(self.batches)

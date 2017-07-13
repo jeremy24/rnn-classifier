@@ -7,8 +7,7 @@ import os
 import json
 import threading
 import math
-import re
-import gc
+import json
 import traceback
 from six.moves import cPickle
 
@@ -23,20 +22,22 @@ import tensorflow as tf
 from decorators import *
 
 from tensorflow.python.client import timeline
+
 os.environ["LD_LIBRARY_PATH"] = "/usr/local/cuda/extras/CUPTI/lib64/"
 
 
 def dump_args(args):
-	"""dump args to a file"""
+	"""dump args to a file (json and cPickel)"""
 	try:
 		filename = os.path.join(args.save_dir, "hyper_params.json")
+		with open(os.path.join(args.save_dir, 'config.pkl'), 'wb') as f:
+			cPickle.dump(args, f)
 		with open(filename, "w") as fout:
 			data = dict()
 			args = vars(args)
 			for key in args:
 				data[key] = args[key]
 			fout.write(json.dumps(data, sort_keys=True, indent=4, separators=(",", ":")))
-			fout.close()
 	except Exception as ex:
 		print("Unable to save args to file: ", ex)
 		exit(1)
@@ -68,7 +69,7 @@ def main():
 						help='number of epochs')
 	parser.add_argument('--save_every', type=int, default=1000,
 						help='save frequency')
-	parser.add_argument('--grad_clip', type=float, default=5.,
+	parser.add_argument('--max_gradient', type=float, default=5.,
 						help='clip gradients at this value')
 	parser.add_argument('--learning_rate', type=float, default=0.002,
 						help='learning rate')
@@ -223,12 +224,22 @@ def bucket_by_length(words):
 		buckets[len(word)].append(word)
 	return buckets
 
+
+class dump_into_namespace:
+	def __init__(self, env, *vars):
+		self.vars = dict([(x, env[x]) for v in vars for x in env if v is env[x]])
+	def __getattr__(self, name):
+		print(self.vars)
+		return self.vars[name]
+
+
 def train(args):
 	one_mil = 1000000
 
 	todo = 1 * one_mil
 
-
+	if not args.init_from:
+		args.init_from = None
 
 	data_loader = TextLoader(args.data_dir, args.save_dir,
 							 args.batch_size, args.seq_length, todo=todo,
@@ -242,47 +253,65 @@ def train(args):
 	print("Vocab size: ", args.vocab_size)
 	print("Num classes: ", args.num_classes)
 
+	print(args.init_from)
+
 	# check compatibility if training is continued from previously saved model
 	if args.init_from is not None:
+		print("Initing from saved model")
 		# check if all necessary files exist
-		assert os.path.isdir(args.init_from), " %s must be a a path" % args.init_from
-		assert os.path.isfile(
-			os.path.join(args.init_from, "config.pkl")), "config.pkl file does not exist in path %s" % args.init_from
-		assert os.path.isfile(os.path.join(args.init_from,
-										   "chars_vocab.pkl")), "chars_vocab.pkl.pkl file does not exist in path %s" % args.init_from
+		# assert os.path.isdir(args.init_from), " %s must be a a path" % args.init_from
+		# assert os.path.isfile(
+		# 	os.path.join(args.init_from, "config.pkl")), "config.pkl file does not exist in path %s" % args.init_from
+		# assert os.path.isfile(os.path.join(args.init_from,
+		# 								   "chars_vocab.pkl")), "chars_vocab.pkl.pkl file does not exist in path %s" % args.init_from
 		ckpt = tf.train.get_checkpoint_state(args.init_from)
 		assert ckpt, "No checkpoint found"
 		assert ckpt.model_checkpoint_path, "No model path found in checkpoint"
+		#
+		# # open old config and check if models are compatible
+		# with open(os.path.join(args.init_from, 'config.pkl'), 'rb') as f:
+		# 	saved_model_args = cPickle.load(f)
+		# need_be_same = ["model", "rnn_size", "num_layers", "seq_length"]
+		# for checkme in need_be_same:
+		# 	assert vars(saved_model_args)[checkme] == vars(args)[
+		# 		checkme], "Command line argument and saved model disagree on '%s' " % checkme
+		#
+		# # open saved vocab/dict and check if vocabs/dicts are compatible
+		# with open(os.path.join(args.init_from, 'chars_vocab.pkl'), 'rb') as f:
+		# 	saved_chars, saved_vocab = cPickle.load(f)
+		# assert saved_chars == data_loader.chars, "Data and loaded model disagree on character set!"
+		# assert saved_vocab == data_loader.vocab, "Data and loaded model disagree on dictionary mappings!"
 
-		# open old config and check if models are compatible
-		with open(os.path.join(args.init_from, 'config.pkl'), 'rb') as f:
-			saved_model_args = cPickle.load(f)
-		need_be_same = ["model", "rnn_size", "num_layers", "seq_length"]
-		for checkme in need_be_same:
-			assert vars(saved_model_args)[checkme] == vars(args)[
-				checkme], "Command line argument and saved model disagree on '%s' " % checkme
+		with open(os.path.join(args.init_from, "hyper_params.json")) as saved_args:
+			saved = json.load(saved_args)
+			print(saved)
 
-		# open saved vocab/dict and check if vocabs/dicts are compatible
-		with open(os.path.join(args.init_from, 'chars_vocab.pkl'), 'rb') as f:
-			saved_chars, saved_vocab = cPickle.load(f)
-		assert saved_chars == data_loader.chars, "Data and loaded model disagree on character set!"
-		assert saved_vocab == data_loader.vocab, "Data and loaded model disagree on dictionary mappings!"
+			vargs = vars(args)
+
+			for key in vargs:
+				if key not in saved:
+					print("Adding key to saved: ", key, vargs[key])
+					saved[key] = vargs[key]
+				saved[key] = vargs[key] if vargs[key] else saved[key]
+			args = argparse.Namespace(**saved)
+
 
 	# args.rnn_size = abs( (data_loader.vocab_size + args.seq_length) // 2)
 	# print("Changed rnn size to be the avg of the in and out layers: ", args.rnn_size)
 	# print("In layer: {}  Out layer: {}".format(args.seq_length, data_loader.vocab_size))
 
 	# args.rnn_size = hidden_size(args.seq_length, data_loader.vocab_size)
+	# exit(1)
 
 	print("Changed rnn size to:", args.rnn_size)
 
 	dump_data(data_loader, args)
 
 	print_cycle = args.print_cycle
-	total_steps = args.num_epochs * data_loader.num_batches
+	total_steps = args.num_epochs * len(data_loader.train_batches)
 
 	print("Building model")
-	model = Model(args, data_loader.num_batches)
+	model = Model(args, len(data_loader.train_batches))
 
 	print("Model built")
 
@@ -324,6 +353,8 @@ def train(args):
 	print("\nModel has {:,} trainable params".format(args.num_params))
 	print("Data has {:,} individual characters\n".format(data_loader.num_chars))
 
+	data_loader.num_batches = len(data_loader.train_batches)
+
 	with tf.Session(config=sess_config) as sess:
 		# instrument for tensorboard
 		summaries = tf.summary.merge_all()
@@ -340,7 +371,7 @@ def train(args):
 
 		print("Starting...")
 		print("Have {} epochs and {} batches per epoch"
-			  .format(args.num_epochs, data_loader.num_batches))
+			  .format(args.num_epochs, len(data_loader.train_batches)))
 		total_time = 0.0
 		# run_meta = tf.RunMetadata()
 
@@ -368,7 +399,7 @@ def train(args):
 
 			# after we have our "primed" network, we pass the state in
 			# from the prev step to override the zero state of the model
-			for batch in range(1, data_loader.num_batches):
+			for batch in range(1, len(data_loader.train_batches)):
 				step = epoch * data_loader.num_batches + batch
 
 				x, y = data_loader.next_batch()
@@ -386,7 +417,8 @@ def train(args):
 				last_in_epoch = s == data_loader.num_batches - 1
 
 				# if printing
-				if last_in_epoch or step == data_loader.num_batches  - 1 or step % print_cycle == 0 and step > 0 or (last_batch and last_epoch):
+				if last_in_epoch or step == data_loader.num_batches - 1 or step % print_cycle == 0 and step > 0 or (
+					last_batch and last_epoch):
 					do_print = False
 					print("\n\n")
 					with PrintTrain(sess, model, summaries, feed) as item:
@@ -401,7 +433,7 @@ def train(args):
 						their_confusion = sess.run(model.their_confusion, feed)
 						print(their_confusion)
 
-							# only print weights data if we are using them
+						# only print weights data if we are using them
 						if args.use_weights:
 							print("Scale factor: ", sess.run(model.loss_scale_factors, feed))
 							weights = sess.run(model.loss_weights, feed)

@@ -138,8 +138,8 @@ class Model(object):
 		:return: a list of cells
 		"""
 		ret = []
-
-		print("Building {} layers".format(self.args.num_layers))
+		print("\nBuilding cells:")
+		print("\tMaking {} layers".format(self.args.num_layers))
 
 		if self.args.num_layers == 1:
 			ret = self.build_one_layer()
@@ -149,9 +149,8 @@ class Model(object):
 		else:
 			for x in range(self.args.num_layers):
 				ret.append(self.build_one_cell())
-			print("Do not have a routine to make {} layers, using default"
+			print("\tDo not have a routine to make {} layers, using default"
 				  .format(self.args.num_layers))
-		print("Done building cells")
 		return ret
 
 	def zero_states(self):
@@ -176,7 +175,8 @@ class Model(object):
 		self.gpu_type = tf.float32
 		self.is_training = training
 
-		self.seq_length = self.args.seq_length
+		self.seq_length = int(self.args.seq_length)
+		self.max_gradient = float(self.args.max_gradient)
 
 		# for the confusion matrix stuff
 		self._confusion = None
@@ -234,12 +234,6 @@ class Model(object):
 			self.embedding = embedding
 			# inputs => [batch_size, seq_length, embedding_size]
 			# embedding size is decided by tensorflow
-
-		# # dropout beta testing: double check which one should affect next line
-		# if training and args.output_keep_prob:
-		# 	inputs = tf.nn.dropout(inputs, args.output_keep_prob)
-		# # processing inputs on cpu
-		# # with tf.device("/cpu:0"):
 
 		# with tf.name_scope("cells"):
 		self.forward_cells = rnn.MultiRNNCell(self.build_cells(), state_is_tuple=True)
@@ -339,13 +333,44 @@ class Model(object):
 		print("\tlr: {}\n\tdecay every {} steps\n\tdecay rate: {}\n\tstaircase: {}"
 			  .format(self.lr, self.num_batches // 2, self.decay_rate, True))
 
-		with tf.name_scope("optimizer"):
-			self.optimizer = tf.train.AdamOptimizer(learning_rate=self.lr)
+		# with tf.name_scope("optimizer"):
+		# 	self.optimizer = tf.train.AdamOptimizer(learning_rate=self.lr)
+		#
+		# # put this here to make sure all internal optimizer variables get initialized
+		# with tf.name_scope("train"):
+		# 	self.train_op = self.optimizer.minimize(self.loss)
 
-		# put this here to make sure all internal optimizer variables get initialized
-		with tf.name_scope("train"):
-			self.train_op = self.optimizer.minimize(self.loss)
 
+		tvars = tf.trainable_variables()
+		gradients = tf.gradients(self.loss, tvars)
+		clipped_gradients, self.global_gradient_norm = tf.clip_by_global_norm(gradients, self.max_gradient)
+
+		tf.summary.scalar("global_grad_norm", self.global_gradient_norm)
+
+		self.optimizer = tf.train.AdamOptimizer(learning_rate=self.lr)
+
+		try:
+			self.train_gradients = zip(clipped_gradients, tvars)
+		except ValueError as ex:
+			print("Unable to re combine vars and grads, vars: {:,}  grads: {:,}".format(
+				len(tvars), len(clipped_gradients)
+			), ex)
+			exit(1)
+
+		self.train_op = self.optimizer.apply_gradients(self.train_gradients)
+
+		try:
+			for g in gradients:
+				tf.summary.histogram("raw/" + g.name, g)
+			for g in clipped_gradients:
+				tf.summary.histogram("clipped/" + g.name, g)
+		except ValueError as ex:
+			print("Error hanging gradient histograms: ", ex)
+			exit(1)
+
+
+		# tf.summary.histogram("raw_gradients", gradients)
+		# tf.summary.histogram("clipped_gradients", gradients)
 
 		# self.train_op = tf.contrib.layers.optimize_loss(
 		# 	loss=self.loss,
@@ -388,8 +413,7 @@ class Model(object):
 		# loss_weights = tf.ones([self.args.batch_size, self.args.seq_length])
 		# self.loss = s2s.sequence_loss(split_logits, tf.to_int32(self.targets),
 		#							loss_weights, name="compute_loss")
-		print("\nSetting up loss")
-		print("\tCalling confusion to hang its internals")
+		print("\nSetting up loss:")
 		confusion = self.confusion
 
 		self.label_ratio = float(self.args.label_ratio)
@@ -425,8 +449,6 @@ class Model(object):
 			self._loss = tf.losses.softmax_cross_entropy(onehot_labels=onehots,
 														 logits=self.logits)
 
-		print("Returning loss")
-		# scale it up
 		return self._loss  # + self.false_negative_loss_scale_factor  # tf.losses.get_total_loss()  # self._loss
 
 	@define_scope
@@ -498,7 +520,9 @@ class Model(object):
 		preds = tf.cast(predictions, tf.bool)
 		targs = tf.cast(targets, tf.bool)
 
-		print("Ratio: ", self.label_ratio)
+		print("Initializing loss weights:")
+
+		print("\tLabel Ratio: ", self.label_ratio)
 
 		# fn => guessed no was yes 0 and 1
 		# fp => guessed yes was no 1 and 0
@@ -522,7 +546,7 @@ class Model(object):
 						true_fn=lambda: self.false_negative_loss_scale_factor,
 						false_fn=lambda: 1.0)
 
-		print("Capping FN scale factor at: ", self.args.label_ratio)
+		print("\tCapping false negative scale factor at: ", self.args.label_ratio)
 		scale = tf.cond(tf.greater(scale_factor, self.args.label_ratio),
 						true_fn=lambda: tf.to_float(self.args.label_ratio),
 						false_fn=lambda: scale_factor)

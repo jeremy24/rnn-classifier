@@ -6,6 +6,7 @@ from __future__ import absolute_import
 
 import argparse
 import os
+import jinja2 as jinja
 
 from six.moves import cPickle
 
@@ -48,10 +49,17 @@ def make_html(original, expected, labels):
 
 	html = "<p>"
 
-	html += "<p><strong>True Positives:   {:.2f}% </strong></p>".format(tp)
-	html += "<p><strong>False Positives:  {:.2f}% </strong></p>".format(fp)
-	html += "<p><strong>True Negatives:   {:.2f}% </strong></p>".format(tn)
-	html += "<p><strong>False Negatives:  {:.2f}% </strong></p>".format(fn)
+	header = None
+	with open("./partials/section_header.html") as fin:
+		header = jinja.Template(fin.read())
+		render = header.render(fn=fn, fp=fp, tn=tn, tp=tp)
+		html += render
+
+
+	# html += "<p><strong>True Positives:   {:.2f}% </strong></p>".format(tp)
+	# html += "<p><strong>False Positives:  {:.2f}% </strong></p>".format(fp)
+	# html += "<p><strong>True Negatives:   {:.2f}% </strong></p>".format(tn)
+	# html += "<p><strong>False Negatives:  {:.2f}% </strong></p>".format(fn)
 
 	def bold(item, char_color="black"):
 		return "<strong  style='color: {}' >{}</strong>".format(char_color, item)
@@ -102,17 +110,17 @@ def make_html(original, expected, labels):
 		html += bold(char, color) if do_bold else char
 	html += "</p>"
 
-	html += "<p>"
-	for i in range(len(labels)):
-		label = labels[i]
-		html += " " + str(label)
-	html += "</p>"
-
-	html += "<p>"
-	for i in range(len(labels)):
-		wanted = expected[i]
-		html += " " + str(wanted)
-	html += "</p>"
+	# html += "<p>"
+	# for i in range(len(labels)):
+	# 	label = labels[i]
+	# 	html += " " + str(label)
+	# html += "</p>"
+	#
+	# html += "<p>"
+	# for i in range(len(labels)):
+	# 	wanted = expected[i]
+	# 	html += " " + str(wanted)
+	# html += "</p>"
 
 	html += "<p>"
 	return html
@@ -160,31 +168,46 @@ def run_test(sess, model, x_seq, y_seq, args, state, number=0):
 		# print("y_seq: ", y_seq[0])
 		# accuracy = np.mean(np.equal(y_seq, y_bar))
 
-		html = "<html><body><div>"
-		html += "<h3>Spaces in the sequences are replaced with an underscore if they " \
-				"were labeled or expected to be labeled</h3>"
-		html += "<h4>Blue: labeled and wanted label</h4>"
-		html += "<h4>Red: not labeled and wanted label</h4>"
-		html += "<h4>Orange: labeled and wanted no label</h4>"
-		html += "<div><p>Ratio of NO labels to YES labels is {:.2f}:1</p>".format(args.label_ratio)
-		html += "<p> {:.5f}% of the characters are labeled YES".format(1.0 / args.label_ratio * 100.0)
-		html += "<p>This model was trained for {:,} epoch[s] with a batch size of {:,}".format(
-			args.num_epochs, args.batch_size
-		)
-		html += "<p>Decay Rate: {:.2f} </p><p> RNN Size: {:,}</p><p>Vocab Size: {:,}</p>".format(
-			args.decay_rate, args.rnn_size, args.vocab_size
-		)
-		html += "<p>Out Keep P: {:.2f}</p><p>In Keep P: {:.2f}</p><p>LR: {:.5f}</p><p>Num Layers: {:,}</p>".format(
-			args.output_keep_prob, args.input_keep_prob, args.learning_rate, args.num_layers
-		)
-		html += "<p>Model: {}</p><p>Number of Params: {:,}</p><p>Sequence length: {:,}</p>".format(
-			args.model, args.num_params, model.seq_length
-		)
-		html += "</div><div><ol>"
-		for i in range(len(original)):
-			html += "<li> {} </li>".format(make_html(original[i], y_seq[i], y_bar[i]))
 
-		html += "</ol></div></body></html>"
+		params = {
+			"label_ratio": round(args.label_ratio, 3),
+			"label_ratio_percent": round( 1.0 / args.label_ratio * 100.0, 3),
+			"num_epochs": args.num_epochs,
+			"batch_size": args.batch_size,
+			"decay_rate": args.decay_rate,
+			"rnn_size": args.rnn_size,
+			"vocab_size": args.vocab_size,
+			"out_prob": args.output_keep_prob,
+			"in_prob": args.input_keep_prob,
+			"lr":  args.learning_rate,
+			"num_layers": args.num_layers,
+			"model_type": args.model,
+			"num_params": args.num_params,
+			"seq_length": model.seq_length,
+			"item_list": [make_html(original[i], y_seq[i], y_bar[i]) for i in range(len(original))]
+		}
+
+		print("Built params")
+
+		with open("./partials/header.html") as fin:
+			head = fin.read()
+
+			try:
+				head = jinja.Template(head)
+			except Exception as ex:
+				print("Error compiling head template", ex)
+				exit(1)
+			head = head.render(params)
+
+		html = head
+		print(html)
+
+		#
+		# html += "</div><div><ol>"
+		# for i in range(len(original)):
+		# 	html += "<li> {} </li>".format(make_html(original[i], y_seq[i], y_bar[i]))
+		#
+		# html += "</ol></div></body></html>"
 
 		try:
 			y_seq = np.ndarray.flatten(y_seq)
@@ -239,6 +262,7 @@ def test(args):
 	with open(os.path.join(args.save_dir, 'config.pkl'), 'rb') as fin:
 		saved_args = cPickle.load(fin)
 
+
 	print("Saved args: ", saved_args)
 
 	data_loader = TextLoader(saved_args.data_dir, saved_args.save_dir, saved_args.batch_size,
@@ -268,7 +292,7 @@ def test(args):
 		tf.global_variables_initializer().run()
 
 		saver = tf.train.Saver(tf.global_variables())
-		print("Got saver foir trainable variables")
+		print("Got saver for trainable variables")
 
 		ckpt = tf.train.get_checkpoint_state(args.save_dir)
 		print("Loaded checkpoint from save dir")
@@ -322,7 +346,8 @@ def test(args):
 
 			print("Recall:")
 			t_print(recalls)
-
+		else:
+			print("\nInvalid checkpoint file")
 
 if __name__ == '__main__':
 	main()
