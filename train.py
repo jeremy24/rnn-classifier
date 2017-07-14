@@ -30,13 +30,14 @@ def dump_args(args):
 	"""dump args to a file (json and cPickel)"""
 	try:
 		filename = os.path.join(args.save_dir, "hyper_params.json")
+		backup = os.path.join(args.save_dir, "backup_hyper_params.json")
 		with open(os.path.join(args.save_dir, 'config.pkl'), 'wb') as f:
 			cPickle.dump(args, f)
 		with open(filename, "w") as fout:
 			data = dict()
-			args = vars(args)
-			for key in args:
-				data[key] = args[key]
+			vargs = vars(args)
+			for key in vargs:
+				data[key] = vargs[key]
 			fout.write(json.dumps(data, sort_keys=True, indent=4, separators=(",", ":")))
 	except Exception as ex:
 		print("Unable to save args to file: ", ex)
@@ -90,7 +91,7 @@ def main():
 	parser.add_argument("--gpu", type=str, default="1", help="Gpu[s] to make available to tf")
 	parser.add_argument("--print_cycle", type=int, default=500, help="Cycle to print to console")
 	args = parser.parse_args()
-	dump_args(args)
+	# dump_args(args)
 
 	os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu
 	os.environ["LD_LIBRARY_PATH"] = "/usr/local/cuda/extra/CUPTI/lib64/"
@@ -117,7 +118,7 @@ def pretty_print(item, step, total_steps, epoch, print_cycle, end, start, avg_ti
 	str2 = "lr: {:.6f}\n\ttime/{}: {:.3f}".format(item["lr"], print_cycle, end - start)
 	str3 = " time/step = {:.3f}  time left: {:.2f}m g_step: {}".format(avg_time_per, time_left, item["g_step"])
 	print(str1 + str2 + str3)
-	assert step == item["g_step"], "Steps to not equal {} != {}".format(step, item["g_step"])
+	# assert step == item["g_step"], "Steps to not equal {} != {}".format(step, item["g_step"])
 
 
 def pretty_print_confusion(confusion):
@@ -245,13 +246,6 @@ def train(args):
 							 args.batch_size, args.seq_length, todo=todo,
 							 labeler_fn=labeler, is_training=True)
 
-	args.vocab_size = data_loader.vocab_size
-	args.batch_size = data_loader.batch_size
-	args.label_ratio = data_loader.ratio
-	args.num_classes = data_loader.num_classes
-
-	print("Vocab size: ", args.vocab_size)
-	print("Num classes: ", args.num_classes)
 
 	print(args.init_from)
 
@@ -294,7 +288,21 @@ def train(args):
 					saved[key] = vargs[key]
 				saved[key] = vargs[key] if vargs[key] else saved[key]
 			args = argparse.Namespace(**saved)
+			for key in vars(args):
+				print(key, vars(args)[key])
+			# exit(1)
+	else:
+		# if we inited from a saved model this should already be loaded into the saved params
+		print("\nSetting values from data_loader\n")
+		args.vocab_size = data_loader.vocab_size
+		args.batch_size = data_loader.batch_size
+		args.label_ratio = data_loader.ratio
+		args.num_classes = data_loader.num_classes
+		args.num_batches = data_loader.num_batches
 
+	print("Vocab size: ", args.vocab_size)
+	print("Num classes: ", args.num_classes)
+	print("Label Ratio: ", args.label_ratio)
 
 	# args.rnn_size = abs( (data_loader.vocab_size + args.seq_length) // 2)
 	# print("Changed rnn size to be the avg of the in and out layers: ", args.rnn_size)
@@ -382,6 +390,8 @@ def train(args):
 		print("Initializing local variables")
 		sess.run(tf.local_variables_initializer())
 
+		print("\nStarting training loop, have {} steps until completion\n".format(total_steps))
+
 		for epoch in range(args.num_epochs):
 			print("Resetting batch pointer for epoch: ", epoch)
 			data_loader.reset_batch_pointer()
@@ -468,10 +478,10 @@ def train(args):
 					# if trace:
 					#	with open(os.path.join(args.save_dir, "step_" + str(step) + ".ctf.json"), "w") as t_file:
 					#		t_file.write(trace.generate_chrome_trace_format())
-
-					save_model(args, saver, sess, step, dump=False, verbose=False)
-				if last_batch or last_epoch:
 					dump_args(args)
+					save_model(args, saver, sess, step, dump=False, verbose=False)
+				# if last_batch or last_epoch:
+				# 	dump_args(args)
 				# increment the model step
 				# model.inc_step()
 				# sess.run(model.inc_step)

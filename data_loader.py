@@ -7,6 +7,7 @@ import os
 import math
 import time
 import re
+import json
 # from multiprocessing import Process, RawValue, Lock
 # from multiprocessing.dummy import Pool as ThreadPool
 from six.moves import cPickle
@@ -18,7 +19,8 @@ from decorators import *
 class TextLoader(object):
 	def __init__(self, data_dir, save_dir, batch_size, seq_length,
 				 encoding='utf-8', todo=1000000,
-				 labeler_fn=None, is_training=False):
+				 labeler_fn=None, is_training=False,
+				 read_only=False):
 		self.data_dir = data_dir
 		self.batch_size = batch_size
 		self.seq_length = seq_length
@@ -35,6 +37,7 @@ class TextLoader(object):
 		self.labels = list()
 		self.num_chars = 0
 		self.num_classes = 0
+		self.read_only = read_only
 
 		self._test_batches = None
 		self._train_batches = None
@@ -386,6 +389,9 @@ class TextLoader(object):
 
 	def save_vocab_data(self):
 		vocab_file = os.path.join(self.save_dir, "vocab.pkl")
+		if self.read_only:
+			print("\nNot saving vocab, in read only mode\n")
+			return
 		try:
 			print("Dumping vocab to file...")
 			with open(vocab_file, 'wb') as fout:
@@ -428,6 +434,16 @@ class TextLoader(object):
 		assert len(self._train_batches) > 0
 		self.batches = None
 		self.num_batches = None
+
+		with open(os.path.join(self.save_dir, "hyper_params.json"), "r") as saved_args:
+			saved = json.load(saved_args)
+			try:
+				self.num_batches = saved["num_batches"] or None
+				self.label_ratio = saved["label_ratio"] or None
+				self.num_classes = saved["num_classes"] or None
+			except KeyError as ex:
+				print("data_loader is missing a saved params key: ", ex)
+				exit(1)
 
 	def next_batch(self):
 		# x, y = self.x_batches[self.pointer], self.y_batches[self.pointer]

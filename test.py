@@ -130,9 +130,9 @@ def right_wrong(have, want, save_location, nbins=16, step=50):
 		i += 1
 
 	make_hist(fp_fn_coords[0], fp_fn_coords[1], save_location, len(want),
-			  "Labels Wrong", nbins=nbins, step=step)
+			  "Labels Incorrect", nbins=nbins, step=step)
 	make_hist(tp_tn_coords[0], tp_tn_coords[1], save_location, len(want),
-			  "Labels correct", nbins=nbins, step=step)
+			  "Labels Correct", nbins=nbins, step=step)
 
 
 def do_vis(nbins=16, todo=50, step_size=50):
@@ -162,7 +162,7 @@ def make_html(original, expected, labels):
 	html = "<p>"
 
 	header = None
-	with open("./partials/section_header.html") as fin:
+	with open("./partials/section_header.html", "r") as fin:
 		header = jinja.Template(fin.read())
 		render = header.render(fn=fn, fp=fp, tn=tn, tp=tp)
 		html += render
@@ -172,11 +172,13 @@ def make_html(original, expected, labels):
 	# html += "<p><strong>True Negatives:   {:.2f}% </strong></p>".format(tn)
 	# html += "<p><strong>False Negatives:  {:.2f}% </strong></p>".format(fn)
 
-	def bold(item, char_color="black"):
-		return "<strong  style='color: {}' >{}</strong>".format(char_color, item)
+	def bold(item, char_color="white", background_color="black"):
+		return "<strong  style='color: {}; background-color: {};' >{}</strong>".format(
+			char_color, background_color, item)
 
 	# print the labeling we got
-	html += "<p><strong>We Got: </strong>"
+	html += "<div style='background-color: black;'>"
+	html += "<p><strong style='color: white;'>We Got: </strong>"
 	for i in range(len(labels)):
 		char = original[i]
 		label = labels[i]
@@ -198,11 +200,11 @@ def make_html(original, expected, labels):
 		if wanted == 0 and label == 0:
 			do_bold = False
 
-		html += bold(char, color) if do_bold else char
+		html += bold(char, background_color=color)
 	html += "</p>"
 
 	# print the expected labeling
-	html += "<p><strong>Wanted: </strong>"
+	html += "<p><strong style='color: white;'>Wanted: </strong>"
 	for i in range(len(labels)):
 		char = original[i]
 		wanted = expected[i]
@@ -214,12 +216,11 @@ def make_html(original, expected, labels):
 		if char == "\t" and (wanted or label):
 			char = "(T)"
 		wanted = expected[i]
-		do_bold = False
+		color = "black"
 		if wanted == 1:
-			do_bold = True
 			color = "blue"
-		html += bold(char, color) if do_bold else char
-	html += "</p>"
+		html += bold(char, background_color=color)
+	html += "</p></div>"
 
 	# html += "<p>"
 	# for i in range(len(labels)):
@@ -257,7 +258,6 @@ def run_test(sess, model, x_seq, y_seq, args, state, number=0):
 
 	try:
 		# print("x_seq shape: ", x_seq.shape, "y_seq shape: ", y_seq.shape)
-
 		feed = {model.input_data: x_seq, model.targets: y_seq}  # ,  model.initial_state: state}
 		probs, state, loss = sess.run([model.probs, model.final_state, model.cost], feed)
 
@@ -267,6 +267,7 @@ def run_test(sess, model, x_seq, y_seq, args, state, number=0):
 
 		original = get_chars(x_batch=x_seq, flatten=False)
 		y_bar = list()
+
 
 		for item in y_seq_:
 			sublist = list()
@@ -301,7 +302,7 @@ def run_test(sess, model, x_seq, y_seq, args, state, number=0):
 
 		# print("Built params")
 
-		with open("./partials/header.html") as fin:
+		with open("./partials/header.html", "r") as fin:
 			head = fin.read()
 
 			try:
@@ -312,22 +313,8 @@ def run_test(sess, model, x_seq, y_seq, args, state, number=0):
 			head = head.render(params)
 
 
-
-
 		html = head
-
-		# y = y_seq[0]
-		# y_ = y_bar[0]
-		# horiz = [ord(c) for c in y_seq]
-
 		result = y_bar
-
-		#
-		# html += "</div><div><ol>"
-		# for i in range(len(original)):
-		# 	html += "<li> {} </li>".format(make_html(original[i], y_seq[i], y_bar[i]))
-		#
-		# html += "</ol></div></body></html>"
 
 		try:
 			y_seq = np.ndarray.flatten(y_seq)
@@ -335,6 +322,7 @@ def run_test(sess, model, x_seq, y_seq, args, state, number=0):
 			with open("labeled.html", "w") as fout:
 				fout.write(html)
 			confusion = skmetrics.confusion_matrix(y_seq, y_bar)
+			print("Built labeled")
 		except ValueError as ex:
 			print("Error build confusion:", ex)
 			print(y_seq.shape)
@@ -385,7 +373,7 @@ def test(args):
 	print("Saved args: ", saved_args)
 
 	data_loader = TextLoader(saved_args.data_dir, saved_args.save_dir, saved_args.batch_size,
-							 saved_args.seq_length)
+							 saved_args.seq_length, read_only=True)
 
 	data_loader.batches = data_loader.test_batches
 	data_loader.num_batches = len(data_loader.batches)
@@ -469,18 +457,15 @@ def test(args):
 			np.save(os.path.join(args.save_dir, "results.npy"), y_bar)
 			np.save(os.path.join(args.save_dir, "wanted.npy"), wanted)
 
-			make_lineplot(range(len(losses)), losses, "Loss",
-						  "./figures/", xlabel="Sequence Number",
-						  ylabel="Loss", label_max=i, step=1)
+			make_lineplot(range(len(losses)), losses, "Loss by Batch",
+						  "./figures/", xlabel="Batch Number",
+						  ylabel="Final Loss", label_max=i, step=1)
 
-			make_lineplot(range(len(accs)), accs, "Accuracy",
-						  "./figures/", xlabel="Sequence Number",
+			make_lineplot(range(len(accs)), accs, "Accuracy by Batch",
+						  "./figures/", xlabel="Batch Number",
 						  ylabel="Accuracy", label_max=i, step=1)
 
-
-
 			do_vis(nbins=saved_args.seq_length // 3, todo=50)
-
 
 			print("\nFor {} batches".format(i))
 			print("Accuracy:")
