@@ -22,7 +22,7 @@ from matplotlib import pyplot as plt
 
 from data_loader import TextLoader
 from model import Model
-
+from letter_tools import text2png
 
 
 def main():
@@ -146,6 +146,10 @@ def do_vis(nbins=16, todo=50, step_size=50):
 
 	label_compare(have, want, save_location, nbins, step=step_size)
 	right_wrong(have, want, save_location, nbins, step=step_size)
+
+
+
+
 
 def make_html(original, expected, labels):
 	if len(original) != len(labels):
@@ -441,11 +445,57 @@ def test(args):
 				wanted.append(y)
 				print("Results len: ", len(results))
 
+				if i == 0:
+					x = x[0]
+					y = y[0]
+					chars = [chr(num) for num in x]
+
+					string = ""
+					for char in chars:
+						if not char.isalnum():
+							string += "_"
+						else:
+							string += char
+					chars = list(string)
+
+					for char in list(set(chars)):
+						print("Getting image for: ", char)
+						text2png(char, 'letters/{}.png'.format(char), bgcolor="#FF0", height=25)
+					text2png(" ", 'letters/space.png', bgcolor="#FF0")
+
+					seq = []
+					print("chars", chars)
+					print(len(chars))
+					for letter in chars:
+						seq.append("letters/{}.png".format(letter))
+
+					string = ""
+					for s in seq:
+						if str(s) == "letters/?.png":
+							pass
+							# s = "./letters/space.png"
+							# string += s + "  "
+						else:
+							string += s + "  "
+
+						print("\t", s)
+
+
+					command = "convert +append {} x_seq.png".format(string)
+
+					print(command)
+
+					os.system(command)
+					exit(1)
+
+
 				losses.append(metrics["loss"])
 				accs.append(metrics["accuracy"])
 				precs.append(metrics["precision"])
 				recalls.append(metrics["recall"])
 				i += 1
+
+
 
 			y_bar = np.array(results)
 			wanted = np.array(wanted)

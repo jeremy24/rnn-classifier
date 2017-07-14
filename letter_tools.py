@@ -8,23 +8,32 @@ from PIL import Image
 from PIL import ImageDraw
 
 
+def _is_ascii(s):
+	return all(ord(c) < 128 for c in s)
+
+
 def text2png(text, fullpath, color="#000", bgcolor="#FFF",
-			 fontfullpath=None, fontsize=13, leftpadding=3, rightpadding=3, width=20):
+			 fontfullpath="fonts/Oswald-Bold.ttf",
+			 fontsize=35, leftpadding=3, rightpadding=3,
+			 width=20, height=None):
 	REPLACEMENT_CHARACTER = u'\uFFFD'
 	NEWLINE_REPLACEMENT_STRING = ' ' + REPLACEMENT_CHARACTER + ' '
-
-	# prepare linkback
-	linkback = "created via http://ourdomain.com"
-	fontlinkback = ImageFont.truetype('./font.ttf', 8)
-	linkbackx = fontlinkback.getsize(linkback)[0]
-	linkback_height = fontlinkback.getsize(linkback)[1]
-	# end of linkback
 
 	font = ImageFont.load_default() if fontfullpath == None else ImageFont.truetype(fontfullpath, fontsize)
 	text = text.replace('\n', NEWLINE_REPLACEMENT_STRING)
 
 	lines = []
 	line = u""
+
+	can_use = [".", ",", "/", "[", "]", "(", ")", ""]
+
+	print("\nProvided text:", text)
+
+
+	print("\tUsing: ", text)
+	if len(text) == 0:
+		print("\tNo valid text, bailing out...")
+		return
 
 	for word in text.split():
 		print(word)
@@ -45,7 +54,16 @@ def text2png(text, fullpath, color="#000", bgcolor="#FFF",
 		lines.append(line[1:])  # add the last line
 
 	line_height = font.getsize(text)[1]
+
+	width = font.getsize(text)[0]
+	width += int( width * .10 )
+
+	if height is not None:
+		line_height = height
+
 	img_height = line_height * (len(lines) + 1)
+
+
 
 	img = Image.new("RGBA", (width, img_height), bgcolor)
 	draw = ImageDraw.Draw(img)
@@ -55,29 +73,5 @@ def text2png(text, fullpath, color="#000", bgcolor="#FFF",
 		draw.text((leftpadding, y), line, color, font=font)
 		y += line_height
 
-	# add linkback at the bottom
-	draw.text((width - linkbackx, img_height - linkback_height), linkback, color, font=fontlinkback)
-
+	print("\tSaving to: ", fullpath)
 	img.save(fullpath)
-
-
-# show time
-text2png(u"S", 'letters/-S.png', fontfullpath="font.ttf", fontsize=30, bgcolor="#FF0")
-text2png(u"H", 'letters/-H.png', fontfullpath="font.ttf", fontsize=30, bgcolor="#FF0")
-text2png(u"E", 'letters/-E.png', fontfullpath="font.ttf", fontsize=30, bgcolor="#FF0")
-text2png(u"R", 'letters/-R.png', fontfullpath="font.ttf", fontsize=30, bgcolor="#FF0")
-
-width = 75264
-height = 70144
-new_im = Image.new('RGBA', (width, height))
-
-for filename in os.listdir("./letters/"):
-	print("\t", filename)
-	tmp_arr = filename.split('-')
-	x_coord = int(tmp_arr[2][1:])
-	y_coord = int(tmp_arr[3][1:])
-	small_img = Image.open(filename)
-	new_im.paste(small_img, (x_coord, y_coord))
-
-new_im.show()
-new_im.save('full_image.png')
