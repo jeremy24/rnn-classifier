@@ -9,6 +9,10 @@ __pycache__/
 
 saved_models/
 saved_models
+results
+results/
+letters/
+letters
 models/
 models
 *.txt

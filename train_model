@@ -94,7 +94,7 @@ if	count $argv > /dev/null
 	echo "Making save directories..."
 	echo $dir $save_dir $log_dir
 	mkdir -p $dir $save_dir $log_dir
-
+	mkdir -p "letters" "results"
 
 	if [ $init = 1 ]
 		set init_from $save_dir
