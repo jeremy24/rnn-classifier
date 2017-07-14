@@ -6,15 +6,23 @@ from __future__ import print_function
 
 import argparse
 import os
+import matplotlib
+import plotly.plotly as py
+import plotly.graph_objs as go
+
+matplotlib.use("Agg")
+
 
 import jinja2 as jinja
 import numpy as np
 import sklearn.metrics as skmetrics
 import tensorflow as tf
 from six.moves import cPickle
+from matplotlib import pyplot as plt
 
 from data_loader import TextLoader
 from model import Model
+
 
 
 def main():
@@ -32,6 +40,112 @@ def main():
 	args = parser.parse_args()
 	test(args)
 
+
+def make_hist(x, y, save_location, label_max, title,
+			  nbins=16, step=100, filetype="png", y_label="Position in Sequence",
+			  x_label="Sequence Number"):
+	print("\nPlotting")
+	print("\tx length: ", len(x))
+	print("\ty length: ", len(y))
+	plt.ioff()
+	plt.hist2d(x, y, bins=nbins)
+	plt.title(title)
+	plt.ylabel(y_label)
+	plt.xlabel(x_label)
+	plt.xticks(range(0, label_max, step), range(0, label_max, step))
+	plt.savefig(save_location + str(title).replace(" ", "_") + "." + filetype)
+
+
+def make_lineplot(x, y, title, save_location, xlabel="x", ylabel="y",
+				  filetype="png", label_max=25, step=5):
+	x = np.array(x).flatten()
+
+	print("\nLineplot:")
+	print("\tTitle: ", title)
+	plt.ioff()
+	if y is None:
+		plt.plot(x)
+	else:
+		y = np.array(y).flatten()
+		print(x)
+		print(y)
+		plt.plot(x, y)
+
+	plt.title(str(title))
+	plt.xlabel(xlabel)
+	plt.ylabel(ylabel)
+	plt.xticks(range(0, label_max, step), range(0, label_max, step))
+	plt.savefig(save_location + str(title).replace(" ", "_") + "." + filetype)
+
+def label_compare(have, want, save_location, nbins=16, step=50):
+	want_coord = [[], []]
+	have_coord = [[], []]
+	i = 0
+	have = np.array(have)
+	want = np.array(want)
+	for h, w in zip(have, want):
+		j = 0
+
+		for h_num, w_num in zip(h, w):
+			if h_num == 1:
+				have_coord[0].append(i)
+				have_coord[1].append(j)
+			if w_num == 1:
+				want_coord[0].append(i)
+				want_coord[1].append(j)
+			j += 1
+		i += 1
+	make_hist(want_coord[0], want_coord[1], save_location, len(want),
+			  "Labels Wanted", nbins=nbins, step=step)
+	make_hist(have_coord[0], have_coord[1], save_location, len(want),
+			  "Labels Got", nbins=nbins, step=step)
+
+
+def right_wrong(have, want, save_location, nbins=16, step=50):
+	fp = np.logical_and(have.astype("bool"), np.logical_not(want.astype("bool")))
+
+	fn = np.logical_and(np.logical_not(have), want)
+
+	fp_fn = np.logical_or(fp, fn)
+	fp_fn_coords = [[], []]
+
+	tp = np.logical_and(have.astype("bool"), want.astype("bool"))
+	tn = np.logical_and(np.logical_not(have.astype("bool")), np.logical_not(want.astype("bool")))
+
+	tp_tn = np.logical_or(tp, tn)
+	tp_tn_coords = [[], []]
+
+	i = 0
+	for bad, good in zip(fp_fn, tp_tn):
+		j = 0
+		for g, b in zip(good, bad):
+			if b:
+				fp_fn_coords[0].append(i)
+				fp_fn_coords[1].append(j)
+			if g:
+				tp_tn_coords[0].append(i)
+				tp_tn_coords[1].append(j)
+
+			j += 1
+		i += 1
+
+	make_hist(fp_fn_coords[0], fp_fn_coords[1], save_location, len(want),
+			  "Labels Wrong", nbins=nbins, step=step)
+	make_hist(tp_tn_coords[0], tp_tn_coords[1], save_location, len(want),
+			  "Labels correct", nbins=nbins, step=step)
+
+
+def do_vis(nbins=16, todo=50, step_size=50):
+	results = np.load("./models/common_words/save/results.npy")
+	wanted =  np.load("./models/common_words/save/wanted.npy")
+
+	have = np.reshape(results, [-1, results.shape[2]])[:todo]
+	want = np.reshape(wanted, [-1, results.shape[2]])[:todo]
+
+	save_location = "./figures/"
+
+	label_compare(have, want, save_location, nbins, step=step_size)
+	right_wrong(have, want, save_location, nbins, step=step_size)
 
 def make_html(original, expected, labels):
 	if len(original) != len(labels):
@@ -162,7 +276,7 @@ def run_test(sess, model, x_seq, y_seq, args, state, number=0):
 
 		y_bar = np.array(y_bar)
 		# print("y_bar: ", y_bar[0])
-		# print("y_seq: ", y_seq[0])
+		# print("y_seq: ", y_seq[0])n
 		# accuracy = np.mean(np.equal(y_seq, y_bar))
 
 
@@ -184,7 +298,8 @@ def run_test(sess, model, x_seq, y_seq, args, state, number=0):
 			"item_list": [make_html(original[i], y_seq[i], y_bar[i]) for i in range(len(original))]
 		}
 
-		print("Built params")
+
+		# print("Built params")
 
 		with open("./partials/header.html") as fin:
 			head = fin.read()
@@ -196,8 +311,16 @@ def run_test(sess, model, x_seq, y_seq, args, state, number=0):
 				exit(1)
 			head = head.render(params)
 
+
+
+
 		html = head
-		print(html)
+
+		# y = y_seq[0]
+		# y_ = y_bar[0]
+		# horiz = [ord(c) for c in y_seq]
+
+		result = y_bar
 
 		#
 		# html += "</div><div><ol>"
@@ -243,7 +366,7 @@ def run_test(sess, model, x_seq, y_seq, args, state, number=0):
 		# print(tp, "/", "(", fp, "+", tp, ")")
 		# print(ret)
 
-		return ret
+		return ret, result
 
 	except Exception as ex:
 		print("run_test: ", ex)
@@ -309,26 +432,55 @@ def test(args):
 			recalls = list()
 			i = 0
 
+			results = list()
+			wanted = list()
+
 			for batch in data_loader.test_batches:
 				# state = sess.run(model.cell.zero_state(saved_args.batch_size, tf.float32))
 				if i == args.n:  # number to run
 					break
 				# batch => [2]	   [x, y] pairs of data where
 				# x and y are => [ batch_size, seq_length ]
-				if i % 100 == 0:
-					print("On batch:", i)
+
+				print("On batch:", i)
 
 				# accuracy, _, loss = run_test(sess, model, batch[0], batch[1], state)
 				x = batch[0]
 				y = batch[1]
-				metrics = run_test(sess, model, x, y, saved_args, None)
+				metrics, y_bar = run_test(sess, model, x, y, saved_args, None)
+
+				results.append(y_bar)
+				wanted.append(y)
+				print("Results len: ", len(results))
 
 				losses.append(metrics["loss"])
 				accs.append(metrics["accuracy"])
 				precs.append(metrics["precision"])
 				recalls.append(metrics["recall"])
 				i += 1
-				break
+
+			y_bar = np.array(results)
+			wanted = np.array(wanted)
+
+			print("y_bar shape: ", y_bar.shape)
+			assert len(results) == i
+			assert len(wanted) == len(results)
+
+			np.save(os.path.join(args.save_dir, "results.npy"), y_bar)
+			np.save(os.path.join(args.save_dir, "wanted.npy"), wanted)
+
+			make_lineplot(range(len(losses)), losses, "Loss",
+						  "./figures/", xlabel="Sequence Number",
+						  ylabel="Loss", label_max=i, step=1)
+
+			make_lineplot(range(len(accs)), accs, "Accuracy",
+						  "./figures/", xlabel="Sequence Number",
+						  ylabel="Accuracy", label_max=i, step=1)
+
+
+
+			do_vis(nbins=saved_args.seq_length // 3, todo=50)
+
 
 			print("\nFor {} batches".format(i))
 			print("Accuracy:")
