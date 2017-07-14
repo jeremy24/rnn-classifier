@@ -428,11 +428,13 @@ def test(args):
 			wanted = list()
 
 
-			double_buffer = True
+			# double_buffer = True
+			# for _ in range(5):
+			# 	batch = data_loader.test_batches[0]
 
-			# for batch in data_loader.test_batches:
-			for _ in range(5):
-				batch = data_loader.test_batches[0]
+			for batch in data_loader.test_batches:
+				double_buffer = False
+
 						# state = sess.run(model.cell.zero_state(saved_args.batch_size, tf.float32))
 				if i == args.n:  # number to run
 					break

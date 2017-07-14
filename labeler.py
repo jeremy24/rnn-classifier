@@ -13,7 +13,7 @@ def labeler(seq, method=None, replace_char=None, words_to_use=5):
 	replace_char = chr(1) if replace_char is None else str(replace_char)
 
 	# for testing
-	method = LabelTypes.VOWELS
+	method = LabelTypes.COMMON_WORDS
 
 	assert len(replace_char) == 1, "Replacement char has a length > 1"
 	ret = None
@@ -52,6 +52,7 @@ def _common_words(seq, replace_char, words_to_use=5):
 	b = seq.split(" ")
 	wc = dict()
 	for x in b:
+		x = str(x).lower()
 		if x not in wc:
 			wc[x] = 0
 		wc[x] += 1
@@ -62,8 +63,9 @@ def _common_words(seq, replace_char, words_to_use=5):
 			break
 		if len(w) < 3:
 			continue
-		print("\t[{}]:  {:,}".format(w, wc[w]))
-		words.append(w)
+		w_ = " " + w + " "
+		print("\t[{}]:  {:,}".format(w_, wc[w]))
+		words.append(w_)
 
 	print("\nGenerating labels based on {} words".format(len(words)))
 	# expressions = list()
@@ -74,7 +76,7 @@ def _common_words(seq, replace_char, words_to_use=5):
 			return r"(" + w + ")"
 		return r"( " + w + " )"
 
-	expressions = [make_exp(x, space=True) for x in words]
+	expressions = [make_exp(x, space=False) for x in words]
 
 	i = 0
 	for word, exp in zip(words, expressions):
@@ -89,7 +91,7 @@ def _common_words(seq, replace_char, words_to_use=5):
 	for i in range(len(seq)):
 		ret[i] = seq[i] == replace_char
 
-	assert len(ret) == len(seq), "{} != {}".format(len(ret), orig_len)
+	# assert len(ret) == len(seq), "{} != {}".format(len(ret), orig_len)
 	return ret
 
 
