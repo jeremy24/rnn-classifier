@@ -12,7 +12,7 @@ def _is_ascii(s):
 	return all(ord(c) < 128 for c in s)
 
 
-def text2png(text, fullpath, color="#000", bgcolor="#FFF",
+def text2png(text, fullpath, color="#FFF", bgcolor="#FFF",
 			 fontfullpath="fonts/Oswald-Bold.ttf",
 			 fontsize=35, leftpadding=3, rightpadding=3,
 			 width=20, height=None):
@@ -62,7 +62,6 @@ def text2png(text, fullpath, color="#000", bgcolor="#FFF",
 		line_height = height
 
 	img_height = line_height * (len(lines) + 1)
-
 
 
 	img = Image.new("RGBA", (width, img_height), bgcolor)

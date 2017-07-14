@@ -427,8 +427,13 @@ def test(args):
 			results = list()
 			wanted = list()
 
-			for batch in data_loader.test_batches:
-				# state = sess.run(model.cell.zero_state(saved_args.batch_size, tf.float32))
+
+			double_buffer = True
+
+			# for batch in data_loader.test_batches:
+			for _ in range(5):
+				batch = data_loader.test_batches[0]
+						# state = sess.run(model.cell.zero_state(saved_args.batch_size, tf.float32))
 				if i == args.n:  # number to run
 					break
 				# batch => [2]	   [x, y] pairs of data where
@@ -445,9 +450,11 @@ def test(args):
 				wanted.append(y)
 				print("Results len: ", len(results))
 
-				if i == 0:
+				b = args.n if args.n < len(data_loader.test_batches) else len(data_loader.test_batches)
+				if i in [0, b // 4, b // 2, b - 1]:
 					x = x[0]
 					y = y[0]
+					y_bar = y_bar[0]
 					chars = [chr(num) for num in x]
 
 					string = ""
@@ -458,35 +465,43 @@ def test(args):
 							string += char
 					chars = list(string)
 
+					colors = [("blue", "#00F"), ("red", "#F00"), ("white", "#000"), ("orange", "#FFA")]
+
 					for char in list(set(chars)):
 						print("Getting image for: ", char)
-						text2png(char, 'letters/{}.png'.format(char), bgcolor="#FF0", height=25)
-					text2png(" ", 'letters/space.png', bgcolor="#FF0")
+						for color, hex_color in colors:
+							filename = 'letters/{}_{}.png'.format(color, char)
+							text2png(char, filename, bgcolor=hex_color, height=25)
+					wanted_seq = []
+					got_seq = []
 
-					seq = []
-					print("chars", chars)
-					print(len(chars))
+					j = 0
 					for letter in chars:
-						seq.append("letters/{}.png".format(letter))
-
-					string = ""
-					for s in seq:
-						if str(s) == "letters/?.png":
-							pass
-							# s = "./letters/space.png"
-							# string += s + "  "
+						if y[j] == 1:
+							wanted_seq.append("letters/{}_{}.png".format("blue", letter))
 						else:
-							string += s + "  "
+							wanted_seq.append("letters/{}_{}.png".format("white", letter))
+						if y_bar[j] == 1 and y[j] == 1:
+							got_seq.append("letters/{}_{}.png".format("blue", letter))
+						elif y_bar[j] == 0 and y[j] == 1:
+							got_seq.append("letters/{}_{}.png".format("red", letter))
+						elif y_bar[j] == 1 and y[j] == 0:
+							got_seq.append("letters/{}_{}.png".format("orange", letter))
+						else:
+							got_seq.append("letters/{}_{}.png".format("white", letter))
+						j += 1
 
-						print("\t", s)
-
-
-					command = "convert +append {} x_seq.png".format(string)
-
-					print(command)
-
+					command = 'convert -background "#000000" +append {} ./results/wanted.png'.format(" ".join(wanted_seq))
 					os.system(command)
-					exit(1)
+					command = 'convert -background "#000000" +append {} ./results/got.png'.format(" ".join(got_seq))
+					os.system(command)
+					if double_buffer:
+						os.system("mv ./results/wanted.png ./results/final_wanted.png")
+						os.system("mv ./results/got.png ./results/result_{}.png".format(i))
+					else:
+						os.system('convert -background "#000000" -append ./results/wanted.png ./results/got.png ./results/result_{}.png'.format(i))
+					os.system("rm ./results/wanted.png ./results/got.png")
+
 
 
 				losses.append(metrics["loss"])
@@ -503,6 +518,13 @@ def test(args):
 			print("y_bar shape: ", y_bar.shape)
 			assert len(results) == i
 			assert len(wanted) == len(results)
+
+			results = os.listdir("./results/")
+			results = [os.path.join("./results/", path) for path in results]
+			results = " ".join(results)
+			print("Results: ", results)
+
+			os.system('convert -background "#000000" -append {} ./results/final_result.png'.format(results))
 
 			np.save(os.path.join(args.save_dir, "results.npy"), y_bar)
 			np.save(os.path.join(args.save_dir, "wanted.npy"), wanted)

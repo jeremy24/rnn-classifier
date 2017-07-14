@@ -73,6 +73,7 @@ if	count $argv > /dev/null
 	if [ $do_delete = 1 ]
 		echo "Deleting the save dir first"
 		rm -rf $save_dir $log_dir $dir
+		rm ./results/*
 	end
 
 
