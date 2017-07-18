@@ -1,0 +1,41 @@
+#!/usr/bin/fish
+
+
+
+# set the lib path to enable tracing for cuda
+set -g -x	LD_LIBRARY_PATH /usr/local/cuda/extras/CUPTI/lib64:$LD_LIBRARY_PATH
+
+# set the path to use tcmalloc instead
+set -g -x LD_PRELOAD /usr/lib/libtcmalloc.so
+set -g -x  CUDA_VISIBLE_DEVICES "0"
+
+
+set dir "./models/rnn/"
+set concat $dir"concat"
+set average $dir"averaging"
+
+set time_flag --short
+set num_tests 100
+
+
+echo "Making dirs" $dir $concat $average
+mkdir -p $dir $concat $average
+
+
+# make sure they both use the same chunks of data
+set -g -x MODEL_DATA_MIN_PERCENT 100
+
+
+echo "Setting MODEL_USE_RNN_CONCAT to 0"
+set -g -x MODEL_USE_RNN_CONCAT 0
+
+./train_model $average --delete $time_flag
+
+
+echo "Setting MODEL_USE_RNN_CONCAT to 1"
+set -g -x MODEL_USE_RNN_CONCAT 1
+
+./train_model $concat --delete $time_flag
+
+
+

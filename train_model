@@ -9,8 +9,6 @@ set -g -x	LD_LIBRARY_PATH /usr/local/cuda/extras/CUPTI/lib64:$LD_LIBRARY_PATH
 # set the path to use tcmalloc instead
 set -g -x LD_PRELOAD /usr/lib/libtcmalloc.so
 
-
-
 set -g -x  CUDA_VISIBLE_DEVICES "0"
 
 
@@ -27,7 +25,7 @@ if	count $argv > /dev/null
 	set num_layers 1
 	set rnn_size 500
 	set gpu 1 
-	set seq_len 35
+	set seq_len 128
 	set num_epochs 500
 	set save_every 2500
 	set data_dir .
@@ -38,7 +36,7 @@ if	count $argv > /dev/null
 	set model "lstm"
 	set use_weights 1
 
-	set embedding_size 500
+	set embedding_size 200
 
 	set init_from ""
 	set init 0
@@ -64,6 +62,8 @@ if	count $argv > /dev/null
 				set num_epochs 10
 			case --medium
 				set num_epochs 5
+			case --benchmark
+			    set num_epochs 3
 			case --init
 				set init 1
 			case --no_delete

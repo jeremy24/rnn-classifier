@@ -3,9 +3,11 @@ from __future__ import print_function
 from __future__ import division
 
 import math
+import os
 
 import sklearn as sk
 import tensorflow as tf
+
 
 from tensorflow.contrib import rnn
 from tensorflow.contrib import seq2seq as s2s
@@ -380,7 +382,7 @@ class Model(object):
 
 		print("\tInput:    ", rnn_input.shape)
 		seq_lens = [self.seq_length for _ in range(self.args.batch_size)]
-		rnn_output, self.final_state = tf.nn.bidirectional_dynamic_rnn(cell_fw=self.forward_cells,
+		rnn_layer_out, self.final_state = tf.nn.bidirectional_dynamic_rnn(cell_fw=self.forward_cells,
 																	   cell_bw=self.backward_cells,
 																	   inputs=rnn_input,
 																	   initial_state_fw=self.cell_state[0],
@@ -392,11 +394,25 @@ class Model(object):
 
 		# average the outputs
 		with tf.name_scope("avg_rnn_output"):
-			rnn_output = tf.divide(tf.add(rnn_output[0], rnn_output[1]), 2.0)
+			print("\nPooling ")
+			if "MODEL_USE_RNN_CONCAT" in os.environ and int(os.environ["MODEL_USE_RNN_CONCAT"]) == 1:
+				print("\tUsing concatted outputs!")
+				concatted = tf.concat(rnn_layer_out, 2)
+				print("\tConcatted:  ", concatted.shape)
+				rnn_output = concatted
+			else:
+				print("\tUsing averaged outputs")
+				rnn_output = tf.divide(tf.add(rnn_layer_out[0], rnn_layer_out[1]), 2.0)
+
+
 		# rnn_output = tf.cond(tf.equal(tf.mod(self.step, 150), 0),
 		# 		true_fn=lambda: tf.add(raw_rnn_output, tf.random_normal(raw_rnn_output.shape, dtype=self.gpu_type)),
 		# 		false_fn=lambda: raw_rnn_output)
 		print("\tOutput:   ", rnn_output.shape)
+
+
+
+		# exit(1)
 
 		# rnn_output = tf.transpose(rnn_output, perm=[0, 2, 1])
 		# rnn_pool = tf.layers.max_pooling1d(rnn_output, pool_size=3,
@@ -411,8 +427,8 @@ class Model(object):
 		# print("Pool Out: ", rnn_output.shape)
 
 
-		tf.summary.histogram("foward_state", self.cell_state[0])
-		tf.summary.histogram("backward_state", self.cell_state[1])
+		tf.summary.histogram("cell/foward_state", self.cell_state[0])
+		tf.summary.histogram("cell/backward_state", self.cell_state[1])
 
 		# the final layers
 		# maps the outputs	to [ vocab_size ] probs
@@ -502,10 +518,10 @@ class Model(object):
 		self.train_op = self.optimizer.apply_gradients(self.train_gradients)
 
 		try:
-			for g in gradients:
-				tf.summary.histogram("raw/" + g.name, g)
-			for g in clipped_gradients:
-				tf.summary.histogram("clipped/" + g.name, g)
+			for g, cg in zip(gradients, clipped_gradients):
+				name = "grads/" + g.name
+				tf.summary.histogram("raw/" + name, g)
+				tf.summary.histogram("clipped/" + name, cg)
 		except ValueError as ex:
 			print("Error hanging gradient histograms: ", ex)
 			exit(1)
@@ -531,10 +547,10 @@ class Model(object):
 		# some nice logging
 
 		tf.summary.scalar("loss", self.loss)
-		tf.summary.scalar("false_negatives", self.false_negatives)
-		tf.summary.scalar("true_positives", self.true_positives)
-		tf.summary.scalar("false_positives", self.false_positives)
-		tf.summary.scalar("true_negatives", self.true_negatives)
+		tf.summary.scalar("confusion/false_negatives", self.false_negatives)
+		tf.summary.scalar("confusion/true_positives", self.true_positives)
+		tf.summary.scalar("confusion/false_positives", self.false_positives)
+		tf.summary.scalar("confusion/true_negatives", self.true_negatives)
 
 		self.add_summaries(self.probs, "probability")
 
@@ -543,8 +559,8 @@ class Model(object):
 
 	@staticmethod
 	def add_summaries(item, name):
-		tf.summary.scalar("max_" + name, tf.reduce_max(item))
-		tf.summary.scalar("min_" + name, tf.reduce_min(item))
+		tf.summary.scalar(name + "_max", tf.reduce_max(item))
+		tf.summary.scalar(name + "_min", tf.reduce_min(item))
 
 	@ifnotdefined
 	def onehot_labels(self):
@@ -692,11 +708,11 @@ class Model(object):
 							   false_fn=lambda: 1.0)
 
 		print("\tCapping minimum false negative scale factor at: ", self.args.label_ratio)
-		scale = tf.cond(tf.less(scale_factor, self.args.label_ratio),
+		self._loss_scale = tf.cond(tf.less(scale_factor, self.args.label_ratio),
 						true_fn=lambda: tf.to_float(self.args.label_ratio),
 						false_fn=lambda: scale_factor)
 
-		tf.summary.scalar("loss_scale_used", scale)
+		tf.summary.scalar("loss_scale_used", self._loss_scale)
 
 		# scale = tf.add(scale, self.label_ratio)
 
@@ -704,7 +720,7 @@ class Model(object):
 		weighted_tp = tf.multiply(true_positives, .2)
 
 		weighted_tn = tf.multiply(true_negatives, 1.0)
-		weighted_fn = tf.multiply(false_negatives, scale)
+		weighted_fn = tf.multiply(false_negatives, self._loss_scale)
 
 		# the above weights will punish false negatives and reward true positives
 		return [weighted_tp, weighted_tn, weighted_fn, weighted_fp]  # weights
@@ -716,7 +732,7 @@ class Model(object):
 	# @define_scope(scope="print_scales")
 	@property
 	def loss_scale_factors(self):
-		return {"fn": self.false_negative_loss_scale_factor + self.label_ratio}
+		return {"fn": self.false_negative_loss_scale_factor, "actual: ": self._loss_scale}
 
 	@staticmethod
 	def loglog(item):

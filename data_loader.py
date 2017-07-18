@@ -147,7 +147,24 @@ class TextLoader(object):
 		self.reverse_vocab = dict()
 		self.vocab_size = 0
 
+
+
 		min_percent = .05  # 0.20
+
+		if "MODEL_DATA_MIN_PERCENT" in os.environ:
+			try:
+				passed_value = float(os.environ["MODEL_DATA_MIN_PERCENT"])
+				if 0.0 < passed_value < 1.0:
+					min_percent = passed_value
+					print("Min percent passed in from env and was changed to: ", min_percent)
+				elif 0.0 < passed_value < 100.0:
+					min_percent = passed_value / 100.0
+					print("Min percent passed in from env and was changed to: ", min_percent)
+				else:
+					print("\nInvalid value passed in for min percent, not using:  ", passed_value)
+			except ValueError:
+				print("\nMin percent passed as env variable is not a valid float, not using it: ", os.environ["MODEL_DATA_MIN_PERCENT"], "\n")
+
 
 		if todo < len(data) * min_percent:
 			print("todo of {:,} is less than {}% of {:,}, changing..."
