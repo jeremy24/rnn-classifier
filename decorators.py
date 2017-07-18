@@ -124,6 +124,32 @@ def no_dupes(function, *args, **kwargs):
 
 
 @doublewrap
+def errorwrap(function, do_exit=False, *args, **kwargs):
+	"""
+	A decorator for functions that define TensorFlow operations. The wrapped
+	function will only be executed once. Subsequent calls to it will directly
+	return the result so that operations are added to the graph only once.
+	The operations added by the function live within a tf.variable_scope(). If
+	this decorator is used with arguments, they will be forwarded to the
+	variable scope. The scope name defaults to the name of the wrapped
+	function.
+	"""
+	name = function.__name__
+
+	@property
+	@functools.wraps(function)
+	def decorator(self):
+		try:
+			function(self, *args)
+		except Exception as ex:
+			print("Error in {}:  {}".format(name, ex))
+			if do_exit:
+				exit(1)
+
+	return decorator
+
+
+@doublewrap
 def define_scope(function, scope=None, summary=False, *args, **kwargs):
 	"""
 	A decorator for functions that define TensorFlow operations. The wrapped

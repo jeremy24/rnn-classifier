@@ -20,7 +20,7 @@ class TextLoader(object):
 	def __init__(self, data_dir, save_dir, batch_size, seq_length,
 				 encoding='utf-8', todo=1000000,
 				 labeler_fn=None, is_training=False,
-				 read_only=False):
+				 read_only=False, max_word_length=None):
 		self.data_dir = data_dir
 		self.batch_size = batch_size
 		self.seq_length = seq_length
@@ -28,6 +28,7 @@ class TextLoader(object):
 		self.labeler_fn = None
 		self.save_dir = save_dir
 		self.pointer = 0
+		self.max_word_length = max_word_length
 
 		self.vocab = dict()
 		self.chars = dict()
@@ -127,12 +128,26 @@ class TextLoader(object):
 
 		print("\n")
 
+
+		if self.max_word_length is not None:
+			max_len = int(self.max_word_length)
+			print("\nHave a max word length of {:,}".format(max_len))
+			print("\tStarting length: {:,}".format(len(str(data))))
+			local_data = str(data).split()
+			keep = ""
+			for x in local_data:
+				if len(str(x)) <= max_len:
+					keep += str(x) + " "
+			data = keep
+			print("\tNew length: {:,}".format(len(data)))
+
+
 		self.chars = list()
 		self.vocab = dict()
 		self.reverse_vocab = dict()
 		self.vocab_size = 0
 
-		min_percent = 1.00  # 0.20
+		min_percent = .05  # 0.20
 
 		if todo < len(data) * min_percent:
 			print("todo of {:,} is less than {}% of {:,}, changing..."
@@ -279,7 +294,7 @@ class TextLoader(object):
 
 		assert len(ydata) == len(xdata)
 
-		print("len: ", len(xdata))
+		print("len: {:,}".format(len(xdata)))
 
 		# x_batches = np.split(xdata.reshape(self.batch_size, -1),
 		# 					 self.num_batches, 1)
@@ -287,13 +302,16 @@ class TextLoader(object):
 		# 					 self.num_batches, 1)
 
 
-		size = int( len(xdata) / (self.seq_length * self.batch_size))
+		num_chunks = int( len(xdata) / (self.seq_length * self.batch_size))
 
-		print("Splitting {} into {} chunks".format(len(xdata), size))
-		x_batches = np.split(xdata, size)
+		print("Splitting {} into {} chunks".format(len(xdata), num_chunks))
+		print("{:,} / {:,} = {:,}".format(len(xdata), (self.seq_length * self.batch_size), num_chunks))
+		print("seq len: {:,}  batch size: {:,}".format(self.seq_length, self.batch_size))
+
+		x_batches = np.split(xdata, num_chunks)
 		x_batches = [ np.split(x, int(len(x) / self.seq_length)) for x in x_batches]
 
-		y_batches = np.split(ydata, size)
+		y_batches = np.split(ydata, num_chunks)
 		y_batches = [ np.split(y, int(len(y) / self.seq_length)) for y in y_batches]
 
 		print("\n{} batches of {} items with {} length strings\n".format(
@@ -354,6 +372,7 @@ class TextLoader(object):
 		if not self.have_saved_data():
 			print("\nData failed to save!\n")
 			exit(1)
+		# exit(1)
 
 	@property
 	def test_batches(self):

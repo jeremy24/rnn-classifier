@@ -61,10 +61,14 @@ def _common_words(seq, replace_char, words_to_use=5):
 	for w in sorted(wc, key=wc.get, reverse=True):
 		if len(words) == words_to_use:
 			break
-		if len(w) < 3:
+		# print("\tWord: ", w)
+		if len(w) < 3 or not str(w).isalnum():
+			# print("\t\tSkipping...")
 			continue
+		# print("\t")
 		w_ = " " + w + " "
-		print("\t[{}]:  {:,}".format(w_, wc[w]))
+		# w_ = w_.replace("\\", "\\\\")
+		print("\t[{}]:  {:,}  word len: {}".format(w_, wc[w], len(w_)))
 		words.append(w_)
 
 	print("\nGenerating labels based on {} words".format(len(words)))
@@ -82,11 +86,18 @@ def _common_words(seq, replace_char, words_to_use=5):
 	for word, exp in zip(words, expressions):
 		gc.collect()
 		replace_string = replace_char * len(word)
-		seq = re.sub(exp, replace_string, seq, flags=re.IGNORECASE)
-		print("\t{:02d}: Done with: {}".format(i, word))
+		assert len(replace_string) == len(word), "Replace string len doesn't match: [{}]  [{}]".format(
+			replace_string, word
+		)
+		seq = re.sub(exp, replace_string, seq)
+		print("\t{:02d}: Done with: [{}]  Used: [{}]  {} {}"
+			  .format(i, word, exp, len(word), len(replace_string)))
+		assert len(seq) == orig_len, "Lens don't match after word: {}, {:,} != {:,}"\
+			.format(exp, len(seq), orig_len)
 		i += 1
 
 	print("\n\tDone with all replacements")
+
 
 	for i in range(len(seq)):
 		ret[i] = seq[i] == replace_char

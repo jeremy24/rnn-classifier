@@ -111,11 +111,14 @@ def dump_data(data_loader, args):
 		cPickle.dump((data_loader.chars, data_loader.vocab), f)
 
 
-def pretty_print(item, step, total_steps, epoch, print_cycle, end, start, avg_time_per):
+def pretty_print(item, step, total_steps, epoch, print_cycle, end, start, avg_time_per, x, y):
 	steps_left = total_steps - step
 	time_left = steps_left * avg_time_per / 60
+
+	yes_labels = np.sum(np.array(y).flatten())
+	ratio = yes_labels / len(np.array(x).flatten()) * 100.0
 	str1 = "{}/{} (epoch {}), train_loss: {:.5f}, ".format(step, total_steps, epoch, item["train_loss"])
-	str2 = "lr: {:.6f}\n\ttime/{}: {:.3f}".format(item["lr"], print_cycle, end - start)
+	str2 = "lr: {:.6f}  label ratio: {:.5f}%\n\ttime/{}: {:.3f}".format(item["lr"], ratio, print_cycle, end - start)
 	str3 = " time/step = {:.3f}  time left: {:.2f}m g_step: {}".format(avg_time_per, time_left, item["g_step"])
 	print(str1 + str2 + str3)
 	# assert step == item["g_step"], "Steps to not equal {} != {}".format(step, item["g_step"])
@@ -244,9 +247,10 @@ def train(args):
 
 	data_loader = TextLoader(args.data_dir, args.save_dir,
 							 args.batch_size, args.seq_length, todo=todo,
-							 labeler_fn=labeler, is_training=True)
+							 labeler_fn=labeler, is_training=True, max_word_length=None)
 
 
+	# exit(1)
 	print(args.init_from)
 
 	# check compatibility if training is continued from previously saved model
@@ -401,7 +405,6 @@ def train(args):
 
 			# This will get us our initial cell state of zero
 			cell_state = None
-			step = 0
 			x, y = data_loader.next_batch()
 			feed = {model.input_data: x, model.targets: y}
 			with NormalTrain(sess, model, feed) as state:
@@ -448,10 +451,12 @@ def train(args):
 							print("Scale factor: ", sess.run(model.loss_scale_factors, feed))
 							weights = sess.run(model.loss_weights, feed)
 							sum_weights = [np.sum(x) for x in weights]
-							print("Weights:", sum_weights)
+							# [weighted_tp, weighted_tn, weighted_fn, weighted_fp]
+							print("Weights:  TP: {:.3f}  TN: {:.3f}  FN: {:.3f}  FP: {:.3f}".format(*sum_weights))
+							# print("Weights:", sum_weights)
 
 						with Confusion(sess, model, feed) as confusion_matrix:
-							pretty_print(item, step, total_steps, epoch, print_cycle, end, start, avg_time_per)
+							pretty_print(item, step, total_steps, epoch, print_cycle, end, start, avg_time_per, x, y)
 
 						start = time.time()
 

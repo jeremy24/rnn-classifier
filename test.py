@@ -135,9 +135,13 @@ def right_wrong(have, want, save_location, nbins=16, step=50):
 			  "Labels Correct", nbins=nbins, step=step)
 
 
-def do_vis(nbins=16, todo=50, step_size=50):
-	results = np.load("./models/common_words/save/results.npy")
-	wanted =  np.load("./models/common_words/save/wanted.npy")
+def do_vis(save_dir, nbins=16, todo=50, step_size=50):
+
+	results_file = os.path.join(save_dir, "results.npy")
+	wanted_file = os.path.join(save_dir, "wanted.npy")
+
+	results = np.load(results_file)
+	wanted = np.load(wanted_file)
 
 	have = np.reshape(results, [-1, results.shape[2]])[:todo]
 	want = np.reshape(wanted, [-1, results.shape[2]])[:todo]
@@ -161,7 +165,7 @@ def make_html(original, expected, labels):
 	tn = 100 * np.sum(np.logical_and(np.logical_not(expected), np.logical_not(labels))) / len(labels)
 	fn = 100 * np.sum(np.logical_and(expected, np.logical_not(labels))) / len(labels)
 
-	assert int(tp + fp + tn + fn) == 100
+	assert 98 < int(tp + fp + tn + fn) < 102, "Total not between 98 and 102 => {}".format(int(tp + fp + tn + fn))
 
 	html = "<p>"
 
@@ -361,8 +365,9 @@ def run_test(sess, model, x_seq, y_seq, args, state, number=0):
 		return ret, result
 
 	except Exception as ex:
-		print("run_test: ", ex)
-		exit(1)
+		print("run_test threw exception: ", ex)
+		raise(ex)
+		# exit(1)
 
 
 def test(args):
@@ -467,13 +472,13 @@ def test(args):
 							string += char
 					chars = list(string)
 
-					colors = [("blue", "#00F"), ("red", "#F00"), ("white", "#000"), ("orange", "#FFA")]
+					colors = [("blue", "#00F"), ("red", "#F00"), ("black", "#000"), ("orange", "#FA0")]
 
 					for char in list(set(chars)):
 						print("Getting image for: ", char)
 						for color, hex_color in colors:
 							filename = 'letters/{}_{}.png'.format(color, char)
-							text2png(char, filename, bgcolor=hex_color, height=25)
+							text2png(char, filename, color=hex_color, bgcolor="#FFF", height=25)
 					wanted_seq = []
 					got_seq = []
 
@@ -482,28 +487,31 @@ def test(args):
 						if y[j] == 1:
 							wanted_seq.append("letters/{}_{}.png".format("blue", letter))
 						else:
-							wanted_seq.append("letters/{}_{}.png".format("white", letter))
+							wanted_seq.append("letters/{}_{}.png".format("black", letter))
+
 						if y_bar[j] == 1 and y[j] == 1:
 							got_seq.append("letters/{}_{}.png".format("blue", letter))
+							print("blue ", letter)
 						elif y_bar[j] == 0 and y[j] == 1:
 							got_seq.append("letters/{}_{}.png".format("red", letter))
+							print("red ", letter)
 						elif y_bar[j] == 1 and y[j] == 0:
 							got_seq.append("letters/{}_{}.png".format("orange", letter))
+							print("orange ", letter)
 						else:
-							got_seq.append("letters/{}_{}.png".format("white", letter))
+							got_seq.append("letters/{}_{}.png".format("black", letter))
+							print("black ", letter)
 						j += 1
 
-					command = 'convert -background "#000000" +append {} ./results/wanted.png'.format(" ".join(wanted_seq))
+					command = 'convert -background "#FFFFFF" -set colorspace RGB +append {} ./results/wanted.png'.format(" ".join(wanted_seq))
 					os.system(command)
-					command = 'convert -background "#000000" +append {} ./results/got.png'.format(" ".join(got_seq))
+					command = 'convert -background "#FFFFFF" -set colorspace RGB +append {} ./results/got.png'.format(" ".join(got_seq))
 					os.system(command)
-					if double_buffer:
-						os.system("mv ./results/wanted.png ./results/final_wanted.png")
-						os.system("mv ./results/got.png ./results/result_{}.png".format(i))
-					else:
-						os.system('convert -background "#000000" -append ./results/wanted.png ./results/got.png ./results/result_{}.png'.format(i))
-					os.system("rm ./results/wanted.png ./results/got.png")
-
+					command = 'convert -append -background "#FFFFFF" -set colorspace RGB ./results/wanted.png ./results/got.png ./results/result_{}.png'.format(i)
+					print("Running:\n\t", command)
+					os.system(command)
+					# exit(1)
+					# os.system("rm ./results/wanted.png ./results/got.png")
 
 
 				losses.append(metrics["loss"])
@@ -526,7 +534,7 @@ def test(args):
 			results = " ".join(results)
 			print("Results: ", results)
 
-			os.system('convert -background "#000000" -append {} ./results/final_result.png'.format(results))
+			# os.system('convert -append {} ./results/final_result.png'.format(results))
 
 			np.save(os.path.join(args.save_dir, "results.npy"), y_bar)
 			np.save(os.path.join(args.save_dir, "wanted.npy"), wanted)
@@ -539,7 +547,7 @@ def test(args):
 						  "./figures/", xlabel="Batch Number",
 						  ylabel="Accuracy", label_max=i, step=1)
 
-			do_vis(nbins=saved_args.seq_length // 3, todo=50)
+			do_vis(args.save_dir, nbins=saved_args.seq_length // 3, todo=50)
 
 			print("\nFor {} batches".format(i))
 			print("Accuracy:")
