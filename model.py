@@ -190,7 +190,7 @@ class Model(object):
 
 	def add_conv(self, conv_input, out_size, conv_stride, pool_stride, kernel_size, layer_number):
 		print("\tLayer: ", layer_number)
-		print("\t\tKernel: {}  c stride: {} pool stride: {} out size: {}".format(kernel_size, conv_stride, pool_stride, out_size))
+		print("\t\tKernel: {}  Conv Stride: {} Pool Stride: {} Out Size: {}".format(kernel_size, conv_stride, pool_stride, out_size))
 		cluster = tf.layers.conv1d(inputs=conv_input, filters=out_size,
 								   kernel_size=[kernel_size],
 								   strides=[conv_stride],
@@ -283,7 +283,7 @@ class Model(object):
 		# this maps vectors of len vocab_size => vectors of size rnn_size
 		with tf.name_scope("get_embedding"):
 			embedding = tf.get_variable("embedding",
-										[args.vocab_size, args.rnn_size], trainable=False)
+										[args.vocab_size, args.embedding_size], trainable=False)
 			inputs = tf.nn.embedding_lookup(embedding, tf.to_int32(self.input_data))
 			self.embedding = embedding
 		# inputs => [batch_size, seq_length, embedding_size]
@@ -293,69 +293,72 @@ class Model(object):
 		print("\nInputs: ", inputs.shape)
 
 		# If using the conv in front of the rnn
-		conv_input = inputs
-
-		print("\n\nClustering")
-		print("\tConv input: ", conv_input.shape)
-
-		with tf.name_scope("swap_conv_dims"):
-			conv_input = tf.reshape(conv_input, [self.args.batch_size, self.seq_length, self.args.rnn_size])
-			conv_input = tf.transpose(conv_input, perm=[0, 2, 1])  # swap dims
-
-		print("\tReshaped:   ", conv_input.shape)
-
-		cluster_stride = 1
-		# cluster1 = tf.layers.conv1d(inputs=output, filters=self.args.seq_length,
-		# 							kernel_size=[7],
-		# 							strides=[cluster_stride],
-		# 							padding="SAME",
-		# 							activation=lambda x: tf.maximum(0.0, x),
-		# 							name="cluster1")
+		# conv_input = inputs
 		#
-		# print("\tRaw cluster1: ", cluster1.shape)
-		# print("\tCluster1:     ", cluster1.shape)
+		# print("\n\nClustering")
+		# print("\tConv input: ", conv_input.shape)
 		#
-		# # in => [ batch, height, width, channels ]
-		# # ksize => size of window for each dim
-		# # strides => stride of window for each dim
-		# # passing => SAME
+		# with tf.name_scope("swap_conv_dims"):
+		# 	conv_input = tf.reshape(conv_input, [self.args.batch_size, self.seq_length, self.args.embedding_size])
+		# 	conv_input = tf.transpose(conv_input, perm=[0, 2, 1])  # swap dims
+		# 	# conv_input = tf.reshape(conv_input, shape=[self.args.batch_size, self.seq_length * self.args.rnn_size, 1])
+		#
+		# print("\tReshaped:   ", conv_input.shape)
+		#
+		# cluster_stride = 1
+		# # cluster1 = tf.layers.conv1d(inputs=output, filters=self.args.seq_length,
+		# # 							kernel_size=[7],
+		# # 							strides=[cluster_stride],
+		# # 							padding="SAME",
+		# # 							activation=lambda x: tf.maximum(0.0, x),
+		# # 							name="cluster1")
+		# #
+		# # print("\tRaw cluster1: ", cluster1.shape)
+		# # print("\tCluster1:     ", cluster1.shape)
+		# #
+		# # # in => [ batch, height, width, channels ]
+		# # # ksize => size of window for each dim
+		# # # strides => stride of window for each dim
+		# # # passing => SAME
+		# #
+		# #
+		# # cluster_pool1 = tf.layers.max_pooling1d(cluster1, pool_size=3,
+		# # 										strides=[2],
+		# # 										padding="SAME",
+		# # 										name="pool1")
+		#
+		# # print("\tClusterPool1: ", cluster_pool1.shape, "\n")
+		#
+		# # self, input, out_size, conv_stride, pool_stride, kernel_size, layer_number):
+		#
+		# print("\tSeq length: ", self.seq_length)
+		#
+		# # input, out_size, conv_stride, pool_stride, kernel_size, layer_number):
+		#
+		# cluster_pool1 = self.add_conv(conv_input=conv_input, out_size=self.seq_length, conv_stride=cluster_stride, pool_stride=2, kernel_size=7, layer_number="1")
+		# print("\tLayer one:    ", cluster_pool1.shape)
+		#
+		# cluster_pool2 = self.add_conv(conv_input=cluster_pool1, out_size=self.seq_length, conv_stride=cluster_stride, pool_stride=2, kernel_size=5, layer_number="2")
+		# print("\tLayer two:    ", cluster_pool2.shape)
+		#
+		# cluster_pool3 = self.add_conv(cluster_pool2, out_size=self.seq_length, conv_stride=cluster_stride, pool_stride=2, kernel_size=3, layer_number="3")
+		# print("\tLayer three: ", cluster_pool3.shape)
+		#
+		# final_conv_out = cluster_pool3
+		#
+		# with tf.name_scope("swap_rnn_dims"):
+		# 	cluster_output = tf.transpose(final_conv_out, perm=[0, 2, 1])
+		# 	# cluster_output = tf.reshape(final_conv_out, shape=[self.args.batch_size, self.seq_length, -1])
 		#
 		#
-		# cluster_pool1 = tf.layers.max_pooling1d(cluster1, pool_size=3,
-		# 										strides=[2],
-		# 										padding="SAME",
-		# 										name="pool1")
-
-		# print("\tClusterPool1: ", cluster_pool1.shape, "\n")
-
-		# self, input, out_size, conv_stride, pool_stride, kernel_size, layer_number):
-
-		print("\tSeq length: ", self.seq_length)
-
-		# input, out_size, conv_stride, pool_stride, kernel_size, layer_number):
-
-		cluster_pool1 = self.add_conv(conv_input=conv_input, out_size=self.seq_length, conv_stride=cluster_stride, pool_stride=2, kernel_size=7, layer_number="1")
-		print("\tLayer one:    ", cluster_pool1.shape)
-
-		cluster_pool2 = self.add_conv(conv_input=cluster_pool1, out_size=self.seq_length, conv_stride=cluster_stride, pool_stride=2, kernel_size=5, layer_number="2")
-		print("\tLayer two:    ", cluster_pool2.shape)
-
-		cluster_pool3 = self.add_conv(cluster_pool2, out_size=self.seq_length, conv_stride=cluster_stride, pool_stride=2, kernel_size=3, layer_number="3")
-		print("\tLayer three: ", cluster_pool3.shape)
-
-		final_conv_out = cluster_pool3
-
-		with tf.name_scope("swap_rnn_dims"):
-			cluster_output = tf.transpose(final_conv_out, perm=[0, 2, 1])
-			# cluster_output = final_conv_out
-
-		print("\tPool Output:  ", cluster_output.shape)
-		rnn_size = cluster_output.shape[2].value
-		rnn_input = cluster_output
+		#
+		# print("\tPool Output:  ", cluster_output.shape)
+		# rnn_size = cluster_output.shape[2].value
+		# rnn_input = cluster_output
 
 		# # if using JUST the RNN
-		# rnn_size = self.args.rnn_size
-		# rnn_input = inputs
+		rnn_size = self.args.embedding_size
+		rnn_input = inputs
 
 
 		print("\nRNN:")
@@ -363,7 +366,7 @@ class Model(object):
 		# print("\t", cluster_output.shape)
 		# print("\t", dir(cluster_output.shape))
 
-		print("\tSize:   ", rnn_size)
+		print("\tSize:     ", rnn_size)
 		# with tf.name_scope("cells"):
 		self.forward_cells = rnn.MultiRNNCell(self.build_cells(size=rnn_size), state_is_tuple=True)
 		self.backward_cells = rnn.MultiRNNCell(self.build_cells(size=rnn_size), state_is_tuple=True)
@@ -375,7 +378,7 @@ class Model(object):
 		self.cell_state = (self.forward_cells.zero_state(self.args.batch_size, self.gpu_type),
 						   self.backward_cells.zero_state(self.args.batch_size, self.gpu_type))
 
-		print("\tInput:  ", rnn_input.shape)
+		print("\tInput:    ", rnn_input.shape)
 		seq_lens = [self.seq_length for _ in range(self.args.batch_size)]
 		rnn_output, self.final_state = tf.nn.bidirectional_dynamic_rnn(cell_fw=self.forward_cells,
 																	   cell_bw=self.backward_cells,
@@ -386,13 +389,27 @@ class Model(object):
 																	   parallel_iterations=64,
 																	   sequence_length=seq_lens)
 
+
 		# average the outputs
 		with tf.name_scope("avg_rnn_output"):
 			rnn_output = tf.divide(tf.add(rnn_output[0], rnn_output[1]), 2.0)
 		# rnn_output = tf.cond(tf.equal(tf.mod(self.step, 150), 0),
 		# 		true_fn=lambda: tf.add(raw_rnn_output, tf.random_normal(raw_rnn_output.shape, dtype=self.gpu_type)),
 		# 		false_fn=lambda: raw_rnn_output)
-		print("\tOutput: ", rnn_output.shape)
+		print("\tOutput:   ", rnn_output.shape)
+
+		# rnn_output = tf.transpose(rnn_output, perm=[0, 2, 1])
+		# rnn_pool = tf.layers.max_pooling1d(rnn_output, pool_size=3,
+		# 							   strides=[2],
+		# 							   padding="SAME",
+		# 							   name="rnn_pool")
+		#
+		# print("\tRNN Pool: ", rnn_pool.shaoe)
+		#
+		# rnn_output = tf.transpose(rnn_pool, perm=[0, 2, 1])
+		#
+		# print("Pool Out: ", rnn_output.shape)
+
 
 		tf.summary.histogram("foward_state", self.cell_state[0])
 		tf.summary.histogram("backward_state", self.cell_state[1])
@@ -683,7 +700,7 @@ class Model(object):
 
 		# scale = tf.add(scale, self.label_ratio)
 
-		weighted_fp = tf.multiply(false_positives, 0.9)
+		weighted_fp = tf.multiply(false_positives, 1.0)
 		weighted_tp = tf.multiply(true_positives, .2)
 
 		weighted_tn = tf.multiply(true_negatives, 1.0)

@@ -21,7 +21,7 @@ def labeler(seq, method=None, replace_char=None, words_to_use=5):
 	if not isinstance(method, LabelTypes):
 		raise Exception("Method passed to labeler must be a LabelType enum")
 
-	if method == LabelTypes.VOWELS:
+	if method == LabelTypes.COMMON_WORDS:
 		try:
 			ret = _vowels(seq, replace_char)
 		except Exception as ex:

@@ -437,6 +437,9 @@ def test(args):
 			# for _ in range(5):
 			# 	batch = data_loader.test_batches[0]
 
+			n_to_sample = 10
+			have_sampled = 0
+
 			for batch in data_loader.test_batches:
 				double_buffer = False
 
@@ -458,7 +461,9 @@ def test(args):
 				print("Results len: ", len(results))
 
 				b = args.n if args.n < len(data_loader.test_batches) else len(data_loader.test_batches)
-				if i in [0, b // 4, b // 2, b - 1]:
+
+				if (have_sampled < n_to_sample) and (np.sum(y.flatten()) > 0 or np.sum(np.array(y_bar).flatten()) > 0):
+					have_sampled += 1
 					x = x[0]
 					y = y[0]
 					y_bar = y_bar[0]
@@ -507,7 +512,7 @@ def test(args):
 					os.system(command)
 					command = 'convert -background "#FFFFFF" -set colorspace RGB +append {} ./results/got.png'.format(" ".join(got_seq))
 					os.system(command)
-					command = 'convert -append -background "#FFFFFF" -set colorspace RGB ./results/wanted.png ./results/got.png ./results/result_{}.png'.format(i)
+					command = 'convert -append -background "#FFFFFF" -set colorspace RGB ./results/wanted.png ./results/got.png ./results/sample_{}.png'.format(i)
 					print("Running:\n\t", command)
 					os.system(command)
 					# exit(1)
@@ -530,11 +535,11 @@ def test(args):
 			assert len(wanted) == len(results)
 
 			results = os.listdir("./results/")
-			results = [os.path.join("./results/", path) for path in results]
+			results = [os.path.join("./results/", path) for path in results if "sample" in str(path)]
 			results = " ".join(results)
 			print("Results: ", results)
 
-			# os.system('convert -append {} ./results/final_result.png'.format(results))
+			os.system('convert -append {} ./results/final_result.png'.format(results))
 
 			np.save(os.path.join(args.save_dir, "results.npy"), y_bar)
 			np.save(os.path.join(args.save_dir, "wanted.npy"), wanted)

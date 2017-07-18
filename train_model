@@ -3,12 +3,12 @@
 #source /home/ipp/virt_envs/tensorflow3_xla/bin/activate.fish
 
 
-
 # set the lib path to enable tracing for cuda
 set -g -x	LD_LIBRARY_PATH /usr/local/cuda/extras/CUPTI/lib64:$LD_LIBRARY_PATH
 
 # set the path to use tcmalloc instead
 set -g -x LD_PRELOAD /usr/lib/libtcmalloc.so
+
 
 
 set -g -x  CUDA_VISIBLE_DEVICES "0"
@@ -20,7 +20,7 @@ if	count $argv > /dev/null
 	set dir $argv[1]	
 	
 	set num_tests 2000
-	set print_cycle 10000
+	set print_cycle 100
 	set lr 0.005
 	set out_prob 0.8
 	set in_prob 0.8
@@ -37,6 +37,8 @@ if	count $argv > /dev/null
 	set decay_rate 1
 	set model "lstm"
 	set use_weights 1
+
+	set embedding_size 500
 
 	set init_from ""
 	set init 0
@@ -108,7 +110,7 @@ if	count $argv > /dev/null
 	end
 
 	echo "Launching the model..."
-	python train.py --init_from=$init_from	 --model=$model --use_weights=$use_weights --decay_rate=$decay_rate --max_gradient=$max_grad --batch_size=$batch_size --log_dir=$log_dir --data_dir=$data_dir --save_dir=$save_dir --print_cycle=$print_cycle --seq_length=$seq_len --num_epochs=$num_epochs --learning_rate=$lr --save_every=$save_every --output_keep_prob=$out_prob --input_keep_prob=$in_prob --num_layers=$num_layers --rnn_size=$rnn_size --gpu=$gpu
+	python train.py --init_from=$init_from --embedding_size=$embedding_size --model=$model --use_weights=$use_weights --decay_rate=$decay_rate --max_gradient=$max_grad --batch_size=$batch_size --log_dir=$log_dir --data_dir=$data_dir --save_dir=$save_dir --print_cycle=$print_cycle --seq_length=$seq_len --num_epochs=$num_epochs --learning_rate=$lr --save_every=$save_every --output_keep_prob=$out_prob --input_keep_prob=$in_prob --num_layers=$num_layers --rnn_size=$rnn_size --gpu=$gpu
 
 	# echo "Checking no delete: " $no_delete
 	if [ $no_delete = 1 ]
