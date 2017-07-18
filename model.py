@@ -2,12 +2,10 @@ from __future__ import absolute_import
 from __future__ import print_function
 from __future__ import division
 
-import math
 import os
 
 import sklearn as sk
 import tensorflow as tf
-
 
 from tensorflow.contrib import rnn
 from tensorflow.contrib import seq2seq as s2s
@@ -18,6 +16,9 @@ from decorators import *
 
 """Build a RNN model """
 
+
+# Filter out INFO logs
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '1'
 
 class Model(object):
 	""" The RNN model """
@@ -127,9 +128,6 @@ class Model(object):
 		return c
 
 	def build_one_layer(self, size):
-		# size = (self.args.seq_length + self.args.vocab_size) // 2
-		# print("\nsize changed to {}\n".format(size))
-		# self.args.rnn_size = size
 		cell = self.cell_fn(size)
 		cell = self.add_dropout(cell, self.args.input_keep_prob, self.args.output_keep_prob)
 		return [cell]
@@ -248,7 +246,19 @@ class Model(object):
 		self._loss = None
 		self._cost = None
 
-		self.cell_fn = rnn.LSTMCell
+		args.model = str(args.model).lower()
+
+		print("\n")
+		if args.model == "gru":
+			print("Using GRU Cell")
+			self.cell_fn = rnn.GRUCell
+		elif args.model == "glstm":
+			print("Using GLSTM Cell")
+			self.cell_fn = rnn.GLSTMCell
+		else:
+			print("Using LSTM Cell")
+			self.cell_fn = rnn.LSTMCell
+		print("\n")
 
 		print("\nSetting self.lr = {:.5}".format(args.learning_rate))
 
@@ -541,7 +551,7 @@ class Model(object):
 
 		print("\ntrainable_variables:")
 		for var in tf.trainable_variables():
-			print("\t", var)
+			print("\t", var.name)
 
 		# values for tensorboard
 		# some nice logging

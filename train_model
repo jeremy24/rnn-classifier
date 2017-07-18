@@ -18,10 +18,10 @@ if	count $argv > /dev/null
 	set dir $argv[1]	
 	
 	set num_tests 2000
-	set print_cycle 100
+	set print_cycle 10000
 	set lr 0.005
-	set out_prob 0.8
-	set in_prob 0.8
+	set out_prob 0.7
+	set in_prob 0.7
 	set num_layers 1
 	set rnn_size 500
 	set gpu 1 
@@ -33,7 +33,7 @@ if	count $argv > /dev/null
 	set batch_size 100
 	set max_grad 5
 	set decay_rate 1
-	set model "lstm"
+	set model "gru"
 	set use_weights 1
 
 	set embedding_size 200

@@ -338,12 +338,12 @@ class TextLoader(object):
 		))
 
 		z = x_batches[0]
-		print("\nA sample of the data: (## signifies the boundaries between sequences)\n")
-		print("{}##{}##{}##{}##{}##".format("".join([chr(a) for a in z[0]]),
-				"".join([chr(a) for a in z[1]]),
-				"".join([chr(a) for a in z[2]]),
-				"".join([chr(a) for a in z[3]]),
-				"".join([chr(a) for a in z[4]])).replace("\t", "\t"))
+		# print("\nA sample of the data: (## signifies the boundaries between sequences)\n")
+		# print("{}##{}##{}##{}##{}##".format("".join([chr(a) for a in z[0]]),
+		# 		"".join([chr(a) for a in z[1]]),
+		# 		"".join([chr(a) for a in z[2]]),
+		# 		"".join([chr(a) for a in z[3]]),
+		# 		"".join([chr(a) for a in z[4]])).replace("\t", "\t"))
 
 		self.batches = list()
 		sums = list()
