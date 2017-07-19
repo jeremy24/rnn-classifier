@@ -4,8 +4,6 @@ from __future__ import print_function
 import argparse
 import time
 import os
-import json
-import threading
 import math
 import json
 import traceback
@@ -20,8 +18,6 @@ import numpy as np
 import tensorflow as tf
 
 from decorators import *
-
-from tensorflow.python.client import timeline
 
 os.environ["LD_LIBRARY_PATH"] = "/usr/local/cuda/extras/CUPTI/lib64/"
 
@@ -119,11 +115,11 @@ def pretty_print(item, step, total_steps, epoch, print_cycle, end, start, avg_ti
 
 	yes_labels = np.sum(np.array(y).flatten())
 	ratio = yes_labels / len(np.array(x).flatten()) * 100.0
+	print(item["confusion"])
 	str1 = "{}/{} (epoch {}), train_loss: {:.5f}, ".format(step, total_steps, epoch, item["train_loss"])
 	str2 = "lr: {:.6f}  label ratio: {:.5f}%\n\ttime/{}: {:.3f}".format(item["lr"], ratio, print_cycle, end - start)
 	str3 = " time/step = {:.3f}  time left: {:.2f}m g_step: {}".format(avg_time_per, time_left, item["g_step"])
 	print(str1 + str2 + str3)
-	# assert step == item["g_step"], "Steps to not equal {} != {}".format(step, item["g_step"])
 
 
 def pretty_print_confusion(confusion):
@@ -172,11 +168,11 @@ class NormalTrain(object):
 	def __init__(self, sess, model, feed):
 		self.sess = sess
 		self.feed = feed
-		self.args = [model.cost, model.final_state, model.train_op]
+		self.args = [model.cost, model.final_state, model.train_op, model.loss]
 
 	def __enter__(self):
-		cost, state, _ = self.sess.run(self.args, self.feed)
-		return state
+		cost, state, _, loss = self.sess.run(self.args, self.feed)
+		return state, loss
 
 	def __exit__(self, error_type, value, trace):
 		if value:
@@ -188,11 +184,13 @@ class PrintTrain(object):
 	def __init__(self, sess, model, summaries, feed):
 		self.sess = sess
 		self.feed = feed
-		self.args = [summaries, model.loss, model.final_state, model.train_op, model.lr, model.global_step]
+		self.args = [summaries, model.loss, model.final_state,
+					 model.train_op, model.lr, model.global_step, model.their_confusion]
 
 	def __enter__(self):
-		summary, loss, state, _, lr, g_step = self.sess.run(self.args, feed_dict=self.feed)
-		return {"summary": summary, "train_loss": loss, "state": state, "lr": lr, "g_step": g_step}
+		summary, loss, state, _, lr, g_step, confusion = self.sess.run(self.args, feed_dict=self.feed)
+		return {"summary": summary, "train_loss": loss,
+				"state": state, "lr": lr, "g_step": g_step, "confusion": confusion}
 
 	def __exit__(self, error_type, value, trace):
 		if value:
@@ -232,12 +230,77 @@ def bucket_by_length(words):
 
 
 class dump_into_namespace:
-	def __init__(self, env, *vars):
-		self.vars = dict([(x, env[x]) for v in vars for x in env if v is env[x]])
+	def __init__(self, env, *args):
+		self.vars = dict([(x, env[x]) for v in args for x in env if v is env[x]])
+
 	def __getattr__(self, name):
 		print(self.vars)
 		return self.vars[name]
 
+
+def init_globals(sess):
+	print("Saving global variables")
+	sess.run(tf.global_variables_initializer())
+	saver = tf.train.Saver(tf.global_variables())
+	return saver
+
+
+def get_sess_config():
+	# used if you want a lot of logging
+	sess_config = tf.ConfigProto()
+
+	# used to watch gpu memory thats actually used
+	sess_config.gpu_options.allow_growth = True
+
+	# used to show where things are being placed
+	sess_config.log_device_placement = False
+
+	jit_level = tf.OptimizerOptions.ON_1
+
+	sess_config.graph_options.optimizer_options.global_jit_level = jit_level
+	return sess_config
+
+
+def copy_data_info(args, data_loader):
+	args.vocab_size = data_loader.vocab_size
+	args.batch_size = data_loader.batch_size
+	args.label_ratio = data_loader.ratio
+	args.num_classes = data_loader.num_classes
+	args.num_batches = data_loader.num_batches
+	args.num_chars = data_loader.num_chars
+	return args
+
+def get_flags(num_batches, num_epochs, epoch, batch, step):
+	last_batch = batch == num_batches - 1
+	last_epoch = epoch == num_epochs - 1
+	s = step - (epoch * num_batches)
+	last_in_epoch = s == num_batches - 1
+	return last_batch, last_epoch, last_in_epoch
+
+
+def do_init(args, data_loader):
+	if args.init_from is not None:
+		print("Initing from saved model")
+		checkpoint = tf.train.get_checkpoint_state(args.init_from)
+		assert checkpoint, "No checkpoint found"
+		assert checkpoint.model_checkpoint_path, "No model path found in checkpoint"
+
+		# merge the saved args with the current args
+		# favor the saved versions
+		with open(os.path.join(args.init_from, "hyper_params.json")) as saved_args:
+			saved = json.load(saved_args)
+			vargs = vars(args)
+			for key in vargs:
+				if key not in saved:
+					saved[key] = vargs[key]
+				saved[key] = vargs[key] if vargs[key] else saved[key]
+			args = argparse.Namespace(**saved)
+	else:
+		# if we inited from a saved model this should already be loaded into the saved params
+		print("\nSetting values from data_loader\n")
+		args = copy_data_info(args, data_loader)
+		checkpoint = None
+	return args, checkpoint
 
 def train(args):
 	one_mil = 1000000
@@ -250,98 +313,28 @@ def train(args):
 	data_loader = TextLoader(args.data_dir, args.save_dir,
 							 args.batch_size, args.seq_length, todo=todo,
 							 labeler_fn=labeler, is_training=True, max_word_length=None)
-
-
-	# exit(1)
-	print(args.init_from)
-
+	exit(1)
 	# check compatibility if training is continued from previously saved model
-	if args.init_from is not None:
-		print("Initing from saved model")
-		# check if all necessary files exist
-		# assert os.path.isdir(args.init_from), " %s must be a a path" % args.init_from
-		# assert os.path.isfile(
-		# 	os.path.join(args.init_from, "config.pkl")), "config.pkl file does not exist in path %s" % args.init_from
-		# assert os.path.isfile(os.path.join(args.init_from,
-		# 								   "chars_vocab.pkl")), "chars_vocab.pkl.pkl file does not exist in path %s" % args.init_from
-		ckpt = tf.train.get_checkpoint_state(args.init_from)
-		assert ckpt, "No checkpoint found"
-		assert ckpt.model_checkpoint_path, "No model path found in checkpoint"
-		#
-		# # open old config and check if models are compatible
-		# with open(os.path.join(args.init_from, 'config.pkl'), 'rb') as f:
-		# 	saved_model_args = cPickle.load(f)
-		# need_be_same = ["model", "rnn_size", "num_layers", "seq_length"]
-		# for checkme in need_be_same:
-		# 	assert vars(saved_model_args)[checkme] == vars(args)[
-		# 		checkme], "Command line argument and saved model disagree on '%s' " % checkme
-		#
-		# # open saved vocab/dict and check if vocabs/dicts are compatible
-		# with open(os.path.join(args.init_from, 'chars_vocab.pkl'), 'rb') as f:
-		# 	saved_chars, saved_vocab = cPickle.load(f)
-		# assert saved_chars == data_loader.chars, "Data and loaded model disagree on character set!"
-		# assert saved_vocab == data_loader.vocab, "Data and loaded model disagree on dictionary mappings!"
+	args, checkpoint = do_init(args, data_loader)
 
-		with open(os.path.join(args.init_from, "hyper_params.json")) as saved_args:
-			saved = json.load(saved_args)
-			print(saved)
-
-			vargs = vars(args)
-
-			for key in vargs:
-				if key not in saved:
-					print("Adding key to saved: ", key, vargs[key])
-					saved[key] = vargs[key]
-				saved[key] = vargs[key] if vargs[key] else saved[key]
-			args = argparse.Namespace(**saved)
-			for key in vars(args):
-				print(key, vars(args)[key])
-			# exit(1)
-	else:
-		# if we inited from a saved model this should already be loaded into the saved params
-		print("\nSetting values from data_loader\n")
-		args.vocab_size = data_loader.vocab_size
-		args.batch_size = data_loader.batch_size
-		args.label_ratio = data_loader.ratio
-		args.num_classes = data_loader.num_classes
-		args.num_batches = data_loader.num_batches
 
 	print("Vocab size: ", args.vocab_size)
 	print("Num classes: ", args.num_classes)
 	print("Label Ratio: ", args.label_ratio)
-
-	# args.rnn_size = abs( (data_loader.vocab_size + args.seq_length) // 2)
-	# print("Changed rnn size to be the avg of the in and out layers: ", args.rnn_size)
-	# print("In layer: {}  Out layer: {}".format(args.seq_length, data_loader.vocab_size))
-
-	# args.rnn_size = hidden_size(args.seq_length, data_loader.vocab_size)
-	# exit(1)
-
 	print("Changed rnn size to:", args.rnn_size)
+	
+	# print("\nDumping args data")
+	# dump_data(data_loader, args)
 
-	dump_data(data_loader, args)
-
+	# setup printing cycle
 	print_cycle = args.print_cycle
 	total_steps = args.num_epochs * len(data_loader.train_batches)
 
 	print("Building model")
 	model = Model(args, len(data_loader.train_batches))
-
 	print("Model built")
 
-	# used if you want a lot of logging
-	sess_config = tf.ConfigProto()
-
-	# used to watch gpu memory thats actually used
-	sess_config.gpu_options.allow_growth = True
-
-	# used to show where things are being placed
-	sess_config.log_device_placement = False
-
-	jit_level = 0
-	jit_level = tf.OptimizerOptions.ON_1
-
-	sess_config.graph_options.optimizer_options.global_jit_level = jit_level
+	sess_config = get_sess_config()
 
 	run_options = tf.RunOptions()
 	run_options.trace_level = tf.RunOptions.FULL_TRACE
@@ -351,22 +344,25 @@ def train(args):
 	# set up some data capture lists
 	global_start = time.time()
 
+	# setup stuff for more logging 
+	# so we can save it to JSON
 	args.data = dict()
-
 	args.data["losses"] = list()
 	args.data["avg_time_per_step"] = list()
 	args.data["logged_time"] = list()
-
+	
+	# the number of trainable params in the model
 	args.num_params = int(np.sum([np.prod(v.get_shape().as_list()) for v in tf.trainable_variables()]))
 
 	# refresh dumped data since some models
 	# change the values of args
-	dump_data(data_loader, model.args)
-	dump_args(args)
+	# dump_data(data_loader, model.args)
+	# dump_args(args)
 
 	print("\nModel has {:,} trainable params".format(args.num_params))
 	print("Data has {:,} individual characters\n".format(data_loader.num_chars))
 
+	# we are training, so set num batches accordingly
 	data_loader.num_batches = len(data_loader.train_batches)
 
 	with tf.Session(config=sess_config) as sess:
@@ -376,91 +372,94 @@ def train(args):
 			os.path.join(args.log_dir, time.strftime("%Y-%m-%d-%H-%M-%S")))
 		writer.add_graph(sess.graph)
 
-		print("Saving global variables")
-		sess.run(tf.global_variables_initializer())
-		saver = tf.train.Saver(tf.global_variables())
+		# get the graph saver
+		saver = init_globals(sess)
+		
 		# restore model
-		if args.init_from is not None:
-			saver.restore(sess, ckpt.model_checkpoint_path)
+		if args.init_from is not None and checkpoint:
+			saver.restore(sess, checkpoint.model_checkpoint_path)
 
 		print("Starting...")
 		print("Have {} epochs and {} batches per epoch"
 			  .format(args.num_epochs, len(data_loader.train_batches)))
+
 		total_time = 0.0
-		# run_meta = tf.RunMetadata()
-
-		data_loader.reset_batch_pointer()
-
-		trace = None
 
 		print("Initializing local variables")
 		sess.run(tf.local_variables_initializer())
 
 		print("\nStarting training loop, have {} steps until completion\n".format(total_steps))
 
-		for epoch in range(args.num_epochs):
-			print("Resetting batch pointer for epoch: ", epoch)
-			data_loader.reset_batch_pointer()
-			# state = sess.run(model.initial_state)
+		# start loss as infinity
+		lowest_epoch_loss = float("inf")
+		patience = 5
 
-			start = time.time()
+		# declare here so final save can access it
+		step = 0
+
+		for epoch in range(args.num_epochs):
+			print("\nEpoch ", epoch)
+			print("\tResetting batch pointer...")
+			data_loader.reset_batch_pointer()
+			# clear the epoch loss list
+			epoch_loss = list()
+
+			if epoch > patience:
+				print("Patience is larger than epoch, breaking at Epoch {}".format(epoch))
+				break
+			print("\tPatience: {:,}\n\tLast loss: {:.5f}".format(patience, lowest_epoch_loss))
+
+			print_cycle_time = time.time()
 
 			# This will get us our initial cell state of zero
-			cell_state = None
-			x, y = data_loader.next_batch()
+			# since the model starts with a zero state by default
+			# cell_state = None
+			x, y = data_loader.next_train_batch()
 			feed = {model.input_data: x, model.targets: y}
-			with NormalTrain(sess, model, feed) as state:
+			with NormalTrain(sess, model, feed) as (state, loss):
 				cell_state = state
+				epoch_loss.append(loss)
 
 			# after we have our "primed" network, we pass the state in
 			# from the prev step to override the zero state of the model
 			for batch in range(1, len(data_loader.train_batches)):
 				step = epoch * data_loader.num_batches + batch
 
-				x, y = data_loader.next_batch()
-
+				# get data, make feed dict and pass in prev cell state
+				x, y = data_loader.next_train_batch()
 				feed = {model.input_data: x, model.targets: y, model.cell_state: cell_state}
-				# feed = {model.input_data: x, model.targets: y}
 
-
-				last_batch = batch == data_loader.num_batches - 1
-				last_epoch = epoch == args.num_epochs - 1
-
-				# last_in_epoch = (step + 1) % data_loader.batch_size == data_loader.batch_size - 1
-				s = epoch * data_loader.num_batches
-				s = step - s
-				last_in_epoch = s == data_loader.num_batches - 1
+				# get some of our flags to do things on certain steps
+				last_batch, last_epoch, last_in_epoch = get_flags(data_loader.num_batches, args.num_epochs, epoch, batch, step)
 
 				# if printing
 				if last_in_epoch or step == data_loader.num_batches - 1 or step % print_cycle == 0 and step > 0 or (
 					last_batch and last_epoch):
-					do_print = False
 					print("\n\n")
 					with PrintTrain(sess, model, summaries, feed) as item:
 						writer.add_summary(item["summary"], step)
-						end = time.time()
+						print_cycle_end = time.time()
 
 						cell_state = item["state"]
 
-						total_time += end - start
-						avg_time_per = round(total_time / step if step > 0 else step + 1, 2)
-
-						their_confusion = sess.run(model.their_confusion, feed)
-						print(their_confusion)
+						# get some times
+						total_time += print_cycle_end - print_cycle_time
+						avg_time_per = round(total_time / (step if step > 0 else step + 1), 2)
 
 						# only print weights data if we are using them
 						if args.use_weights:
 							print("Scale factor: ", sess.run(model.loss_scale_factors, feed))
 							weights = sess.run(model.loss_weights, feed)
 							sum_weights = [np.sum(x) for x in weights]
-							# [weighted_tp, weighted_tn, weighted_fn, weighted_fp]
 							print("Weights:  TP: {:.3f}  TN: {:.3f}  FN: {:.3f}  FP: {:.3f}".format(*sum_weights))
-							# print("Weights:", sum_weights)
 
-						with Confusion(sess, model, feed) as confusion_matrix:
-							pretty_print(item, step, total_steps, epoch, print_cycle, end, start, avg_time_per, x, y)
+						# with Confusion(sess, model, feed) as confusion_matrix:
+						pretty_print(item, step, total_steps, epoch, print_cycle, print_cycle_end, print_cycle_time, avg_time_per, x, y)
 
-						start = time.time()
+						# reset the timer
+						print_cycle_time = time.time()
+
+						epoch_loss.append(item["train_loss"])
 
 						global_diff = time.time() - global_start
 						args.data["losses"].append(float(item["train_loss"]))
@@ -468,7 +467,8 @@ def train(args):
 						args.data["avg_time_per_step"].append(float(avg_time_per))
 						args.data["last_recorded_loss"] = {
 							"time": int(time.time() - global_start),
-							"loss": float(item["train_loss"])
+							"loss": float(item["train_loss"]),
+							"step": int(step)
 						}
 						args.data["total_train_time"] = {
 							"steps": int(total_steps),
@@ -476,23 +476,23 @@ def train(args):
 						}
 
 				else:  # else normal training
-					with NormalTrain(sess, model, feed) as state:
+					with NormalTrain(sess, model, feed) as (state, loss):
 						cell_state = state
+						epoch_loss.append(loss)
 
+				# save for the last result
 				if last_in_epoch or step % args.save_every == 0 or (last_batch and last_epoch):
-					# save for the last result
+					save_model(args, saver, sess, step, dump=True, verbose=False)
 
-					# if trace:
-					#	with open(os.path.join(args.save_dir, "step_" + str(step) + ".ctf.json"), "w") as t_file:
-					#		t_file.write(trace.generate_chrome_trace_format())
-					dump_args(args)
-					save_model(args, saver, sess, step, dump=False, verbose=False)
-				# if last_batch or last_epoch:
-				# 	dump_args(args)
-				# increment the model step
-				# model.inc_step()
-				# sess.run(model.inc_step)
-	dump_args(args)
+			# if new epoch loss is 0.5% lower than lowest loss, extend patience
+			this_epoch_loss = np.median(epoch_loss)
+			if this_epoch_loss + (this_epoch_loss * .005) < lowest_epoch_loss:
+				patience += 2
+				lowest_epoch_loss = this_epoch_loss
+				print("Added 2 to patience, new lowest loss is {:.5f}".format(lowest_epoch_loss))
+
+		# save model after all batches are done
+		save_model(args, saver, sess, step, dump=True, verbose=False)
 
 
 if __name__ == '__main__':

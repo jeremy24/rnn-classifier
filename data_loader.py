@@ -30,15 +30,15 @@ class TextLoader(object):
 		self.pointer = 0
 		self.max_word_length = max_word_length
 
-		self.vocab = dict()
+		# self.vocab = dict()
 		self.chars = dict()
-		self.reverse_vocab = dict()
 		self.vocab_size = 0
 		self.tensor = None
 		self.labels = list()
 		self.num_chars = 0
 		self.num_classes = 0
 		self.read_only = read_only
+		self.label_ratio = None
 
 		self._test_batches = None
 		self._train_batches = None
@@ -97,8 +97,8 @@ class TextLoader(object):
 		ord_mapper = np.vectorize(ord)
 		encoded_seq = ord_mapper(seq)
 		self.chars = np.unique(seq)
-		for x in self.chars:
-			self.vocab[x] = ord(x)
+		# for x in self.chars:
+		# 	self.vocab[x] = ord(x)
 
 		print("Extracted out all chars, have: ", len(self.vocab), " Took: ", time.time()-start)
 		labels = np.array(self.labeler_fn(raw_str), dtype=np.uint16)
@@ -107,6 +107,20 @@ class TextLoader(object):
 		assert len(encoded_seq) == len(labels), "Lens don't match {} != {}".format(len(encoded_seq), len(labels))
 		assert len(self.chars) == len(self.vocab), "char and vocab lens mismatch"
 		return {"x": encoded_seq, "y": labels}
+
+
+	@staticmethod
+	def trim_to_max_word_length(data, max_length):
+		assert type(max_length) == int, "Max word length must be an int"
+		print("\nHave a max word length of {:,}".format(max_length))
+		print("\tStarting length: {:,}".format(len(str(data))))
+		local_data = str(data).split()
+		keep = ""
+		for x in local_data:
+			if len(str(x)) <= max_length:
+				keep += str(x) + " "
+		print("\tNew length: {:,}".format(len(keep)))
+		return keep
 
 	def preprocess(self, input_path, todo=float("inf")):
 
@@ -123,31 +137,15 @@ class TextLoader(object):
 			with open(filename, "r") as f:
 				for line in f:
 					data += line
-			# with codecs.open(filename, "r", encoding=self.encoding) as f:
-			# 	data += f.read()
 
 		print("\n")
 
-
 		if self.max_word_length is not None:
-			max_len = int(self.max_word_length)
-			print("\nHave a max word length of {:,}".format(max_len))
-			print("\tStarting length: {:,}".format(len(str(data))))
-			local_data = str(data).split()
-			keep = ""
-			for x in local_data:
-				if len(str(x)) <= max_len:
-					keep += str(x) + " "
-			data = keep
-			print("\tNew length: {:,}".format(len(data)))
-
+			data = self.trim_to_max_word_length(data, self.max_word_length)
 
 		self.chars = list()
-		self.vocab = dict()
-		self.reverse_vocab = dict()
+		# self.vocab = dict()
 		self.vocab_size = 0
-
-
 
 		min_percent = .05  # 0.20
 
@@ -165,7 +163,6 @@ class TextLoader(object):
 			except ValueError:
 				print("\nMin percent passed as env variable is not a valid float, not using it: ", os.environ["MODEL_DATA_MIN_PERCENT"], "\n")
 
-
 		if todo < len(data) * min_percent:
 			print("todo of {:,} is less than {}% of {:,}, changing..."
 				  .format(todo, int(min_percent * 100), len(data)))
@@ -177,7 +174,7 @@ class TextLoader(object):
 		print("Replacing spaces: {}".format(self.replace_multiple_spaces))
 		print("Trimming data to length of todo")
 
-		if self.replace_multiple_spaces == True:
+		if self.replace_multiple_spaces:
 			print("\nStripping multiple newlines")
 			print("\tBefore: ", len(data))
 			# data = re.sub(r"[\n]{3,}", "\n", data)
@@ -199,14 +196,12 @@ class TextLoader(object):
 		print("Starting preprocess {:,} items"
 			  .format(len(seqs)))
 
+		# get labels for the data
 		preprocess_data = self.preprocess_helper(seqs, data)
 		encoded = preprocess_data["x"]
 		labels = preprocess_data["y"]
 
 		print("Labels generated in {:,.3f}".format(time.time() - label_start))
-
-		# make a reverse vocab lookup dict
-		self.reverse_vocab = {v: k for k, v in self.vocab.items()}
 
 		# drop any dupes
 		self.chars = list(set(self.chars))
@@ -214,14 +209,9 @@ class TextLoader(object):
 		assert len(self.chars) == len(self.vocab)
 		assert len(encoded) == len(labels)
 
-		# using uint 16 to save space and because we wont have more than 60k diff chars
-
-		# self.tensor = np.array(encoded, dtype=np.uint16)
-		# self.labels = np.array(labels, dtype=np.uint16)
-
+		# these are what make_batches looks for
 		self.tensor = encoded
 		self.labels = labels
-
 
 		num_true_labels = np.sum(self.labels)
 
@@ -237,15 +227,17 @@ class TextLoader(object):
 		# total number of chars in sample
 		self.num_chars = len(self.tensor)
 
-		# this is an "alias" to the number of classes in the problem
-		self.vocab_size = len(self.vocab)
-		self.num_classes = len(set(self.labels))
+		self.set_metadata()
+
 		print("Processing took {:.3f}  vocab size: {}"
 			  .format(time.time() - start, self.vocab_size))
 
 		self.save_vocab_data()
 		self.create_batches()
 
+	def set_metadata(self):
+		self.vocab_size = len(self.vocab)
+		self.num_classes = len(set(self.labels))
 
 	@staticmethod
 	@format_float(precision=3)
@@ -253,8 +245,7 @@ class TextLoader(object):
 		return num / math.pow(2, 30)
 
 	def sample_batches(self, size=15):
-
-		batch = self.batches[0]
+		batch = self.test_batches[0]
 
 		#  batch[batch_num][x|y][index_in_seq]
 		x = batch[0][0][:size]
@@ -266,7 +257,6 @@ class TextLoader(object):
 
 		z = [self.reverse_vocab[idx] for idx in x]
 		item = np.matrix([z, y])
-
 		print(item)
 
 	def trim_data(self):
@@ -291,7 +281,6 @@ class TextLoader(object):
 			assert False, "Not enough data. Make seq_length and batch_size small."
 
 		print("Total self.tensor size: ", self.to_gb(self.tensor.nbytes), "GB")
-
 		print("Num Batches to make: ", self.num_batches)
 
 		xdata = np.array(self.tensor, dtype=np.uint16)
@@ -299,37 +288,20 @@ class TextLoader(object):
 
 		assert len(ydata) == len(xdata), "Data lengths don't match: {} != {}".format(len(xdata), len(ydata))
 
-		self.vocab_size = len(self.vocab)
-		self.num_classes = len(set(self.labels))
-
 		print("\nHave {} different labels".format(self.vocab_size))
-
-		# dont misalign the labels for now
-		# xdata = xdata[1:-2]
-		# ydata[:-1] = ydata[1:]
-		# ydata[-1] = ydata[0]
-
-		assert len(ydata) == len(xdata)
-
 		print("len: {:,}".format(len(xdata)))
 
-		# x_batches = np.split(xdata.reshape(self.batch_size, -1),
-		# 					 self.num_batches, 1)
-		# y_batches = np.split(ydata.reshape(self.batch_size, -1),
-		# 					 self.num_batches, 1)
-
-
-		num_chunks = int( len(xdata) / (self.seq_length * self.batch_size))
+		num_chunks = int(len(xdata) / (self.seq_length * self.batch_size))
 
 		print("Splitting {} into {} chunks".format(len(xdata), num_chunks))
 		print("{:,} / {:,} = {:,}".format(len(xdata), (self.seq_length * self.batch_size), num_chunks))
 		print("seq len: {:,}  batch size: {:,}".format(self.seq_length, self.batch_size))
 
 		x_batches = np.split(xdata, num_chunks)
-		x_batches = [ np.split(x, int(len(x) / self.seq_length)) for x in x_batches]
+		x_batches = [np.split(x, int(len(x) / self.seq_length)) for x in x_batches]
 
 		y_batches = np.split(ydata, num_chunks)
-		y_batches = [ np.split(y, int(len(y) / self.seq_length)) for y in y_batches]
+		y_batches = [np.split(y, int(len(y) / self.seq_length)) for y in y_batches]
 
 		print("\n{} batches of {} items with {} length strings\n".format(
 			len(x_batches),
@@ -337,7 +309,7 @@ class TextLoader(object):
 			len(x_batches[0][0])
 		))
 
-		z = x_batches[0]
+		# z = x_batches[0]
 		# print("\nA sample of the data: (## signifies the boundaries between sequences)\n")
 		# print("{}##{}##{}##{}##{}##".format("".join([chr(a) for a in z[0]]),
 		# 		"".join([chr(a) for a in z[1]]),
@@ -345,85 +317,96 @@ class TextLoader(object):
 		# 		"".join([chr(a) for a in z[3]]),
 		# 		"".join([chr(a) for a in z[4]])).replace("\t", "\t"))
 
-		self.batches = list()
-		sums = list()
-		dropped = 0
 		# only drop up to a quarter of the batches
 		max_drop = len(x_batches) / 4
 
+		# drop some sparsely labeled x,y sets to improve the ratio if we can
+		self.batches, sums, dropped = self.drop_sparse(self.batch_size, max_drop, y_batches, x_batches)
+
+		print("Dropped", dropped, "batches")
+		print("avg:", np.mean(sums), "  min:", np.min(sums), "  max: ", np.max(sums))
+		batch_members = len(y_batches[0][0]) * len(y_batches[0])
+		percent = [np.mean(s) / batch_members for s in sums]
+		print("avg:", np.mean(percent), "  min:", np.min(percent),
+			  "  max: ", np.max(percent), "  median: ", np.median(percent))
+
+		# this save call will init both the train and test batch properties
+		# on the object and will cause the data to be subdivided correctly
+		# after this they return their local copy and will not touch the batches property
+		# so after the call we set self.batches to None to prevent it being used
+		self.save_test_train()
+		self.batches = None
+
+		self.sample_batches()
+
+		print("Train Batches: {}	Test Batches:  {}"
+			  .format(len(self.train_batches), len(self.test_batches)))
+
+		print("Build batches done...")
+
+		if not self.have_saved_data():
+			print("\nData failed to save!\n")
+			exit(1)
+
+	@staticmethod
+	def drop_sparse(batch_size, max_drop, y_batches, x_batches):
+		print("\nDropping sparse labeled rows")
+		data = list()
+		sums = list()
+		dropped = 0
 		for i in range(len(y_batches)):
 			x, y = x_batches[i], y_batches[i]
-
 			y = np.array(y)
 			# if less than 5% are highlighted, make eligible to dropping
-			if dropped < max_drop and np.sum(np.ndarray.flatten(y)) < self.batch_size * .05:
+			if dropped < max_drop and np.sum(np.ndarray.flatten(y)) < batch_size * .05:
 				dropped += 1
 				continue
 			sums.append(np.sum(y))
 			item = np.array([x, y])
 			item.flags.writeable = False
-			self.batches.append(item)
-		print("Dropped", dropped, "batches")
-		print("avg:", np.mean(sums), "  min:", np.min(sums), "  max: ", np.max(sums))
-		batch_members = len(y_batches[0][0]) * len(y_batches[0])
-		perc = [np.mean(s) / batch_members for s in sums]
-		print("avg:", np.mean(perc), "  min:", np.min(perc),
-			  "  max: ", np.max(perc), "  median: ", np.median(perc))
-		# exit(1)
+			data.append(item)
+		return data, sums, dropped
 
-		# self.batches = np.array(self.batches)
-		# print("Batches built. Shuffling...")
-		# np.random.shuffle(self.batches)
-		size = len(self.batches)
-		test_size = int(size * 0.20)
-
-		# set some data
-		# self.test_batches = self.batches[:test_size]
-		# self.batches = self.batches[test_size:]
-		print("Build batches done...")
-		self.sample_batches()
-
-		print("Batches: {}	Test Batches:  {}"
-			  .format(len(self.batches), len(self.test_batches)))
-		self.save_test_train()
-		if not self.have_saved_data():
-			print("\nData failed to save!\n")
-			exit(1)
-		# exit(1)
+	@property
+	def reverse_vocab(self):
+		"""Make a reverse lookup dict for the vocabulary characters"""
+		return {v: k for k, v in self.vocab.items()}
 
 	@property
 	def test_batches(self):
+		"""The first time this is called it will split off its chunk of the batches"""
 		if self._test_batches is None:
 			if not self.is_training:
 				msg = "Don't have testing batches from file"
 				raise Exception(msg)
 			size = int(self.num_batches * 0.20)
 			self._test_batches = self.batches[:size]
-
-		return self._test_batches
+		return self._test_batches if self._test_batches is not None else list()
 
 	@property
 	def train_batches(self):
+		"""The first time this is called it will split off its chunk of the batches"""
 		if self._train_batches is None:
 			if not self.is_training:
 				msg = "Don't have training batches from file"
 				raise Exception(msg)
 			size = int(self.num_batches * 0.20)
 			self._train_batches = self.batches[size:]
-		return self._train_batches
+		return self._train_batches if self._train_batches is not None else list()
 
 	def save_test_train(self):
+		"""Save train and test data to disk in .npy format"""
 		train_file = os.path.join(self.save_dir, "train_batches.npy")
 		test_file = os.path.join(self.save_dir, "test_batches.npy")
 		try:
-			# save the batches to disk
-			np.save(train_file, self.batches)
+			np.save(train_file, self.train_batches)
 			np.save(test_file, self.test_batches)
 		except Exception as ex:
 			print("Unable to save test/train data: ", ex)
 			exit(1)
 
 	def save_vocab_data(self):
+		"""Save the vocabulary data to disk"""
 		vocab_file = os.path.join(self.save_dir, "vocab.pkl")
 		if self.read_only:
 			print("\nNot saving vocab, in read only mode\n")
@@ -437,6 +420,7 @@ class TextLoader(object):
 			exit(1)
 
 	def have_saved_data(self):
+		"""Check if we have the appropriate saved data files"""
 		train_file = os.path.join(self.save_dir, "train_batches.npy")
 		test_file = os.path.join(self.save_dir, "test_batches.npy")
 		vocab_file = os.path.join(self.save_dir, "vocab.pkl")
@@ -451,21 +435,51 @@ class TextLoader(object):
 			return False
 		return True
 
+	def load_preprocessed_vocab(self):
+		"""
+		 	Load in a saved vocab file
+		"""
+		try:
+			vocab_file = os.path.join(self.save_dir, "vocab.pkl")
+			with open(vocab_file, 'rb') as f:
+				self.chars = cPickle.load(f)
+				assert len(self.chars) > 0, "Loaded vocabulary is empty!"
+		except Exception as ex:
+			print("Unable to load preprocessed vocab file: ", ex)
+			exit(1)
+
+	@property
+	def vocab(self):
+		"""
+			The vocab map, this is computed every call.
+			It is NOT cached just in case the vocab changes
+		"""
+		ret = {}
+		for x in self.chars:
+			ret[x] = ord(x)
+		return ret
+
 	def load_preprocessed(self):
+		"""
+			Load in preprocessed text data, thiw will circumvent the normal
+			way we initialize the train and test batch split by directly setting the values
+		"""
+		assert self.have_saved_data(), "Can't load preprocessed data, files are missing"
+
+		print("Load preprocessed data:")
 		train_file = os.path.join(self.save_dir, "train_batches.npy")
 		test_file = os.path.join(self.save_dir, "test_batches.npy")
-		vocab_file = os.path.join(self.save_dir, "vocab.pkl")
 
-		with open(vocab_file, 'rb') as f:
-			self.chars = cPickle.load(f)
+		self.load_preprocessed_vocab()
 
 		self.vocab_size = len(self.chars)
-		self.vocab = dict(zip(self.chars, range(len(self.chars))))
 
-		print("Loading in preprocessed test and train files...")
-		print("Tensor loaded")
+
+		print("\tloading test and train files...")
 		self._train_batches = np.load(train_file)
 		self._test_batches = np.load(test_file)
+		print("\tTest size:   ", len(self._test_batches))
+		print("\tTrain size:  ", len(self._train_batches))
 		assert len(self._test_batches) > 0
 		assert len(self._train_batches) > 0
 		self.batches = None
@@ -477,11 +491,15 @@ class TextLoader(object):
 				self.num_batches = saved["num_batches"] or None
 				self.label_ratio = saved["label_ratio"] or None
 				self.num_classes = saved["num_classes"] or None
+				self.num_chars = saved["num_chars"] or None
+				print("\tRatio:       ", self.label_ratio)
+				print("\tNum classes: ", self.num_classes)
 			except KeyError as ex:
 				print("data_loader is missing a saved params key: ", ex)
 				exit(1)
 
 	def next_batch(self):
+		"""DEPRECATED"""
 		# x, y = self.x_batches[self.pointer], self.y_batches[self.pointer]
 		item = self.train_batches[self.pointer]
 		# make immutable
@@ -490,8 +508,23 @@ class TextLoader(object):
 			self.reset_batch_pointer()
 		return item[0], item[1]
 
+	def next_train_batch(self):
+		"""Fetch teh next training batch"""
+		item = self.train_batches[self.pointer]
+		self.pointer += 1
+		if self.pointer >= len(self.train_batches):
+			self.reset_batch_pointer()
+		return item[0], item[1]
+
+	def next_test_batch(self):
+		"""Fetch the next test batch"""
+		item = self.test_batches[self.pointer]
+		self.pointer += 1
+		if self.pointer >= len(self.test_batches):
+			self.reset_batch_pointer()
+		return item[0], item[1]
+
 	def reset_batch_pointer(self):
+		"""Reset the batch pointer"""
 		print("Reseting batch pointer...")
 		self.pointer = 0
-		# print("Shuffling the batches...")
-		# np.random.shuffle(self.batches)

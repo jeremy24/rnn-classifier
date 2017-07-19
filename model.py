@@ -1,3 +1,4 @@
+"""Build a RNN model """
 from __future__ import absolute_import
 from __future__ import print_function
 from __future__ import division
@@ -14,11 +15,10 @@ import numpy as np
 
 from decorators import *
 
-"""Build a RNN model """
-
 
 # Filter out INFO logs
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '1'
+
 
 class Model(object):
 	""" The RNN model """
@@ -34,39 +34,39 @@ class Model(object):
 
 	# this currently isn't being used right now
 	# due to the overhaul to use a bi-directional RNN
-	def build_outputs(self, inputs):
-		"""
-		:param inputs:
-		:return: outputs, last_state
-		"""
-		with tf.name_scope("outputs"):
-
-			print("\nBuilding decoder helper")
-
-			if not self.is_training:
-				# if not training we still setup the training helper so the data i
-				# is passed through, but we manually decode it first
-				print("\tUsing the inference helper")
-				seq_lens = tf.fill([self.args.batch_size], self.args.seq_length)
-				embedded_inputs = tf.nn.embedding_lookup(self.embedding,
-														 tf.to_int32(self.input_data))
-				decoder_helper = s2s.TrainingHelper(embedded_inputs, seq_lens)
-			else:
-				print("\tUsing the training helper:")
-				seq_lens = tf.fill([self.args.batch_size], self.args.seq_length)
-				print("\tseq_lens: ", seq_lens.shape)
-				print("\tinputs shape: ", inputs.shape)
-				decoder_helper = s2s.TrainingHelper(inputs, seq_lens)
-
-			# the meat
-			decoder = s2s.BasicDecoder(self.cell, decoder_helper, self.initial_state)
-
-			# what we want
-			decoder_output, last_state, output_len = s2s.dynamic_decode(decoder)
-			outputs = decoder_output.rnn_output
-
-			print("Decoder outputs converted to floats")
-			return tf.to_float(outputs), last_state
+	# def build_outputs(self, inputs):
+	# 	"""
+	# 	:param inputs:
+	# 	:return: outputs, last_state
+	# 	"""
+	# 	with tf.name_scope("outputs"):
+	#
+	# 		print("\nBuilding decoder helper")
+	#
+	# 		if not self.is_training:
+	# 			# if not training we still setup the training helper so the data i
+	# 			# is passed through, but we manually decode it first
+	# 			print("\tUsing the inference helper")
+	# 			seq_lens = tf.fill([self.args.batch_size], self.args.seq_length)
+	# 			embedded_inputs = tf.nn.embedding_lookup(self.embedding,
+	# 													 tf.to_int32(self.input_data))
+	# 			decoder_helper = s2s.TrainingHelper(embedded_inputs, seq_lens)
+	# 		else:
+	# 			print("\tUsing the training helper:")
+	# 			seq_lens = tf.fill([self.args.batch_size], self.args.seq_length)
+	# 			print("\tseq_lens: ", seq_lens.shape)
+	# 			print("\tinputs shape: ", inputs.shape)
+	# 			decoder_helper = s2s.TrainingHelper(inputs, seq_lens)
+	#
+	# 		# the meat
+	# 		decoder = s2s.BasicDecoder(self.cell, decoder_helper, self.initial_state)
+	#
+	# 		# what we want
+	# 		decoder_output, last_state, output_len = s2s.dynamic_decode(decoder)
+	# 		outputs = decoder_output.rnn_output
+	#
+	# 		print("Decoder outputs converted to floats")
+	# 		return tf.to_float(outputs), last_state
 
 	def hang_gpu_variables(self):
 

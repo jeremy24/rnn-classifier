@@ -21,12 +21,12 @@ def labeler(seq, method=None, replace_char=None, words_to_use=5):
 	if not isinstance(method, LabelTypes):
 		raise Exception("Method passed to labeler must be a LabelType enum")
 
-	if method == LabelTypes.COMMON_WORDS:
+	if method == LabelTypes.VOWELS:
 		try:
 			ret = _vowels(seq, replace_char)
 		except Exception as ex:
 			raise Exception("Error labeling using vowels:", ex)
-	if method == LabelTypes.COMMON_WORDS:
+	elif method == LabelTypes.COMMON_WORDS:
 		try:
 			ret = _common_words(seq, replace_char, words_to_use=words_to_use)
 		except Exception as ex:
@@ -92,12 +92,11 @@ def _common_words(seq, replace_char, words_to_use=5):
 		seq = re.sub(exp, replace_string, seq)
 		print("\t{:02d}: Done with: [{}]  Used: [{}]  {} {}"
 			  .format(i, word, exp, len(word), len(replace_string)))
-		assert len(seq) == orig_len, "Lens don't match after word: {}, {:,} != {:,}"\
+		assert len(seq) == orig_len, "Lens don't match after word: {}, {:,} != {:,}" \
 			.format(exp, len(seq), orig_len)
 		i += 1
 
 	print("\n\tDone with all replacements")
-
 
 	for i in range(len(seq)):
 		ret[i] = seq[i] == replace_char
@@ -146,5 +145,3 @@ def _vowels(seq, replace_char):
 
 	assert len(ret) == len(seq), "{} != {}".format(len(ret), orig_len)
 	return ret
-
-
