@@ -302,6 +302,7 @@ def do_init(args, data_loader):
 		checkpoint = None
 	return args, checkpoint
 
+
 def train(args):
 	one_mil = 1000000
 
@@ -313,10 +314,9 @@ def train(args):
 	data_loader = TextLoader(args.data_dir, args.save_dir,
 							 args.batch_size, args.seq_length, todo=todo,
 							 labeler_fn=labeler, is_training=True, max_word_length=None)
-	exit(1)
+	# exit(1)
 	# check compatibility if training is continued from previously saved model
 	args, checkpoint = do_init(args, data_loader)
-
 
 	print("Vocab size: ", args.vocab_size)
 	print("Num classes: ", args.num_classes)

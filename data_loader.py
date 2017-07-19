@@ -2,7 +2,7 @@ from __future__ import print_function
 from __future__ import division
 from __future__ import absolute_import
 
-import codecs
+
 import os
 import math
 import time
@@ -32,7 +32,6 @@ class TextLoader(object):
 
 		# self.vocab = dict()
 		self.chars = dict()
-		self.vocab_size = 0
 		self.tensor = None
 		self.labels = list()
 		self.num_chars = 0
@@ -85,22 +84,14 @@ class TextLoader(object):
 
 	def preprocess_helper(self, seq, raw_str):
 		"""Take in ALL the x data and return {x: list, y: list}"""
-		# encoded_seq = np.zeros(len(seq), dtype=np.uint16)
-		self.chars = set()
-		# seq_set = set(seq)
-
-		print(type(seq))
-
 		start = time.time()
 
 		seq = np.array(seq)
 		ord_mapper = np.vectorize(ord)
 		encoded_seq = ord_mapper(seq)
 		self.chars = np.unique(seq)
-		# for x in self.chars:
-		# 	self.vocab[x] = ord(x)
 
-		print("Extracted out all chars, have: ", len(self.vocab), " Took: ", time.time()-start)
+		print("Extracted out all chars, have: ", len(self.vocab), " Took: ", time.time() - start)
 		labels = np.array(self.labeler_fn(raw_str), dtype=np.uint16)
 		encoded_seq = np.array(encoded_seq, dtype=np.uint16)
 		labels = np.ndarray.flatten(np.array(labels))
@@ -108,10 +99,10 @@ class TextLoader(object):
 		assert len(self.chars) == len(self.vocab), "char and vocab lens mismatch"
 		return {"x": encoded_seq, "y": labels}
 
-
 	@staticmethod
 	def trim_to_max_word_length(data, max_length):
 		assert type(max_length) == int, "Max word length must be an int"
+		assert type(data) == str, "Data passed to trim_to_max_word_length must be a string, got: {}".format(type(data))
 		print("\nHave a max word length of {:,}".format(max_length))
 		print("\tStarting length: {:,}".format(len(str(data))))
 		local_data = str(data).split()
@@ -145,7 +136,7 @@ class TextLoader(object):
 
 		self.chars = list()
 		# self.vocab = dict()
-		self.vocab_size = 0
+		# self.vocab_size = 0
 
 		min_percent = .05  # 0.20
 
@@ -161,7 +152,8 @@ class TextLoader(object):
 				else:
 					print("\nInvalid value passed in for min percent, not using:  ", passed_value)
 			except ValueError:
-				print("\nMin percent passed as env variable is not a valid float, not using it: ", os.environ["MODEL_DATA_MIN_PERCENT"], "\n")
+				print("\nMin percent passed as env variable is not a valid float, not using it: ",
+					  os.environ["MODEL_DATA_MIN_PERCENT"], "\n")
 
 		if todo < len(data) * min_percent:
 			print("todo of {:,} is less than {}% of {:,}, changing..."
@@ -226,8 +218,7 @@ class TextLoader(object):
 
 		# total number of chars in sample
 		self.num_chars = len(self.tensor)
-
-		self.set_metadata()
+		self.num_classes = len(set(self.labels))
 
 		print("Processing took {:.3f}  vocab size: {}"
 			  .format(time.time() - start, self.vocab_size))
@@ -235,9 +226,14 @@ class TextLoader(object):
 		self.save_vocab_data()
 		self.create_batches()
 
-	def set_metadata(self):
-		self.vocab_size = len(self.vocab)
-		self.num_classes = len(set(self.labels))
+	@property
+	def vocab_size(self):
+		"""
+			A dynamic getter for the vocabulary size, just in case it changes
+			:return: len(self.vocab)
+		"""
+		assert self.vocab is not None, "Cannot get vocab size, vocab is None"
+		return len(self.vocab)
 
 	@staticmethod
 	@format_float(precision=3)
@@ -472,7 +468,7 @@ class TextLoader(object):
 
 		self.load_preprocessed_vocab()
 
-		self.vocab_size = len(self.chars)
+		# self.vocab_size = len(self.chars)
 
 
 		print("\tloading test and train files...")

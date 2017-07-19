@@ -212,6 +212,9 @@ class Model(object):
 
 	def __init__(self, args, num_batches=None, training=True):
 		""" init """
+		print("\n\nBuilding a NEW model")
+		print("\tNum batches: ", num_batches)
+		print("\tIs training: ", training)
 
 		if not training:
 			print("\nNot training:")
