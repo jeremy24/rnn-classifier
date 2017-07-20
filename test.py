@@ -330,7 +330,8 @@ def run_test(sess, model, x_seq, y_seq, args, state, number=0):
 			with open("labeled.html", "w") as fout:
 				fout.write(html)
 			confusion = skmetrics.confusion_matrix(y_seq, y_bar)
-			print("Built labeled")
+			clustered, added = model.cluster(y_bar)
+			cluster_confusion = skmetrics.confusion_matrix(y_seq, clustered)
 		except ValueError as ex:
 			print("Error build confusion:", ex)
 			print(y_seq.shape)
@@ -357,6 +358,21 @@ def run_test(sess, model, x_seq, y_seq, args, state, number=0):
 		ret["recall"] = recall
 		ret["sensitivity"] = sensitivity
 		ret["specificity"] = specificity
+
+
+		tn = cluster_confusion[0, 0]
+		fp = cluster_confusion[0, 1]
+		fn = cluster_confusion[1, 0]
+		tp = cluster_confusion[1, 1]
+
+		precision = tp / (fp + tp)
+		recall = tp / (tp + fn)
+		accuracy = (tn + tp) / (tn + fp + fn + tp)
+		sensitivity = recall  # same thing
+		specificity = tn / (tn + fp)
+
+
+		ret["clustered_accuracy"] = accuracy
 
 		# print(tp, fp, tn, fn)
 		# print(tp, "/", "(", fp, "+", tp, ")")
@@ -399,10 +415,12 @@ def test(args):
 
 	def t_print(stuff):
 		"""pretty print stats from a list"""
-		print("\tAvg: {:.3f}".format(np.mean(stuff)))
-		print("\tMax: {:.3f}".format(np.max(stuff)))
-		print("\tMin: {:.3f}".format(np.min(stuff)))
-		print("\tStd: {:.3f}".format(np.std(stuff)))
+		print("\tMean:    {:.3f}".format(np.mean(stuff)))
+		print("\tMedian:  {:.3f}".format(np.median(stuff)))
+		print("\tMax:     {:.3f}".format(np.max(stuff)))
+		print("\tMin:     {:.3f}".format(np.min(stuff)))
+		print("\tStd:     {:.3f}".format(np.std(stuff)))
+
 
 	with tf.Session() as sess:
 		tf.global_variables_initializer().run()
@@ -432,16 +450,14 @@ def test(args):
 			results = list()
 			wanted = list()
 
-
-			# double_buffer = True
-			# for _ in range(5):
-			# 	batch = data_loader.test_batches[0]
+			accs_with_cluster = list()
 
 			n_to_sample = 10
 			have_sampled = 0
 
+			np.random.shuffle(data_loader.test_batches)
+
 			for batch in data_loader.test_batches:
-				double_buffer = False
 
 						# state = sess.run(model.cell.zero_state(saved_args.batch_size, tf.float32))
 				if i == args.n:  # number to run
@@ -449,7 +465,8 @@ def test(args):
 				# batch => [2]	   [x, y] pairs of data where
 				# x and y are => [ batch_size, seq_length ]
 
-				print("On batch:", i)
+				if i % 5 == 0:
+					print("On batch:", i)
 
 				# accuracy, _, loss = run_test(sess, model, batch[0], batch[1], state)
 				x = batch[0]
@@ -458,7 +475,6 @@ def test(args):
 
 				results.append(y_bar)
 				wanted.append(y)
-				print("Results len: ", len(results))
 
 				b = args.n if args.n < len(data_loader.test_batches) else len(data_loader.test_batches)
 
@@ -480,7 +496,6 @@ def test(args):
 					colors = [("blue", "#00F"), ("red", "#F00"), ("black", "#000"), ("orange", "#FA0")]
 
 					for char in list(set(chars)):
-						print("Getting image for: ", char)
 						for color, hex_color in colors:
 							filename = 'letters/{}_{}.png'.format(color, char)
 							text2png(char, filename, color=hex_color, bgcolor="#FFF", height=25)
@@ -496,16 +511,12 @@ def test(args):
 
 						if y_bar[j] == 1 and y[j] == 1:
 							got_seq.append("letters/{}_{}.png".format("blue", letter))
-							print("blue ", letter)
 						elif y_bar[j] == 0 and y[j] == 1:
 							got_seq.append("letters/{}_{}.png".format("red", letter))
-							print("red ", letter)
 						elif y_bar[j] == 1 and y[j] == 0:
 							got_seq.append("letters/{}_{}.png".format("orange", letter))
-							print("orange ", letter)
 						else:
 							got_seq.append("letters/{}_{}.png".format("black", letter))
-							print("black ", letter)
 						j += 1
 
 					command = 'convert -background "#FFFFFF" -set colorspace RGB +append {} ./results/wanted.png'.format(" ".join(wanted_seq))
@@ -513,7 +524,6 @@ def test(args):
 					command = 'convert -background "#FFFFFF" -set colorspace RGB +append {} ./results/got.png'.format(" ".join(got_seq))
 					os.system(command)
 					command = 'convert -append -background "#FFFFFF" -set colorspace RGB ./results/wanted.png ./results/got.png ./results/sample_{}.png'.format(i)
-					print("Running:\n\t", command)
 					os.system(command)
 					# exit(1)
 					# os.system("rm ./results/wanted.png ./results/got.png")
@@ -523,6 +533,7 @@ def test(args):
 				accs.append(metrics["accuracy"])
 				precs.append(metrics["precision"])
 				recalls.append(metrics["recall"])
+				accs_with_cluster.append(metrics["clustered_accuracy"])
 				i += 1
 
 
@@ -555,6 +566,10 @@ def test(args):
 			do_vis(args.save_dir, nbins=saved_args.seq_length // 3, todo=50)
 
 			print("\nFor {} batches".format(i))
+			print("cluster Accuracy:")
+			t_print(accs_with_cluster)
+
+
 			print("Accuracy:")
 			t_print(accs)
 

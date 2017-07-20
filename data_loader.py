@@ -143,10 +143,10 @@ class TextLoader(object):
 		if "MODEL_DATA_MIN_PERCENT" in os.environ:
 			try:
 				passed_value = float(os.environ["MODEL_DATA_MIN_PERCENT"])
-				if 0.0 < passed_value < 1.0:
+				if 0.0 < passed_value <= 1.0:
 					min_percent = passed_value
 					print("Min percent passed in from env and was changed to: ", min_percent)
-				elif 0.0 < passed_value < 100.0:
+				elif 0.0 < passed_value <= 100.0:
 					min_percent = passed_value / 100.0
 					print("Min percent passed in from env and was changed to: ", min_percent)
 				else:
@@ -168,12 +168,12 @@ class TextLoader(object):
 
 		if self.replace_multiple_spaces:
 			print("\nStripping multiple newlines")
-			print("\tBefore: ", len(data))
+			print("\tBefore: {:,}".format(len(data)))
 			# data = re.sub(r"[\n]{3,}", "\n", data)
 			data = re.sub(r"[\t]{2}", "\t", data)
 			data = re.sub(r"[\t]{2}", "\t", data)
 			data = re.sub(r"[\n]{2}", "\n", data)
-			print("\tAfter: ", len(data))
+			print("\tAfter:  {:,}".format(len(data)))
 
 		data = data[:todo]
 		# flatten = lambda l: [item for sublist in l for item in sublist]
@@ -319,12 +319,13 @@ class TextLoader(object):
 		# drop some sparsely labeled x,y sets to improve the ratio if we can
 		self.batches, sums, dropped = self.drop_sparse(self.batch_size, max_drop, y_batches, x_batches)
 
-		print("Dropped", dropped, "batches")
-		print("avg:", np.mean(sums), "  min:", np.min(sums), "  max: ", np.max(sums))
+		print("\nSums:")
+		print("\tAvg: ", np.mean(sums), "\n\tMin: ", np.min(sums), "\n\tMax: ", np.max(sums))
 		batch_members = len(y_batches[0][0]) * len(y_batches[0])
-		percent = [np.mean(s) / batch_members for s in sums]
-		print("avg:", np.mean(percent), "  min:", np.min(percent),
-			  "  max: ", np.max(percent), "  median: ", np.median(percent))
+		percent = [round((np.mean(s) / batch_members) * 100, 3) for s in sums]
+		print("\nLabel Ratios:")
+		print("\n\tAvg:    ", round(np.mean(percent)), "%\n\tMin:    ", np.min(percent),
+			  "%\n\tMax:    ", np.max(percent), "%\n\tMedian: ", np.median(percent), "%")
 
 		# this save call will init both the train and test batch properties
 		# on the object and will cause the data to be subdivided correctly
@@ -361,6 +362,7 @@ class TextLoader(object):
 			item = np.array([x, y])
 			item.flags.writeable = False
 			data.append(item)
+		print("\tDropped", dropped, "batches")
 		return data, sums, dropped
 
 	@property
@@ -520,7 +522,8 @@ class TextLoader(object):
 			self.reset_batch_pointer()
 		return item[0], item[1]
 
-	def reset_batch_pointer(self):
+	def reset_batch_pointer(self, quiet=False):
 		"""Reset the batch pointer"""
-		print("Reseting batch pointer...")
+		if not quiet:
+			print("Reseting batch pointer...")
 		self.pointer = 0

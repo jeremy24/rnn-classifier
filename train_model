@@ -18,7 +18,7 @@ if	count $argv > /dev/null
 	set dir $argv[1]	
 	
 	set num_tests 2000
-	set print_cycle 200
+	set print_cycle 500
 	set lr 0.005
 	set out_prob 0.7
 	set in_prob 0.7
@@ -35,6 +35,18 @@ if	count $argv > /dev/null
 	set decay_rate 1
 	set model "gru"
 	set use_weights 1
+
+
+	set concat_states 1
+
+	if [ $concat_states = 1 ]
+	    echo \n"Setting MODEL_USE_RNN_CONCAT = 1"\n
+	    set -g -x  MODEL_USE_RNN_CONCAT 1
+	end
+
+
+    set -g -x MODEL_DATA_MIN_PERCENT 100
+
 
 	set embedding_size 200
 

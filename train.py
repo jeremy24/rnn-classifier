@@ -392,20 +392,27 @@ def train(args):
 
 		# start loss as infinity
 		lowest_epoch_loss = float("inf")
-		patience = 5
+		highest_true_positives = float("-inf")
+		lowest_false_positives = float("inf")
+		patience = 2
 
 		# declare here so final save can access it
 		step = 0
+		args.epoch_stopped_on = -1
 
 		for epoch in range(args.num_epochs):
 			print("\nEpoch ", epoch)
 			print("\tResetting batch pointer...")
-			data_loader.reset_batch_pointer()
+			data_loader.reset_batch_pointer(quiet=True)
 			# clear the epoch loss list
 			epoch_loss = list()
 
+			true_positives = list()
+			false_positives = list()
+
 			if epoch > patience:
 				print("Patience is larger than epoch, breaking at Epoch {}".format(epoch))
+				args.epoch_stopped_on = epoch
 				break
 			print("\tPatience: {:,}\n\tLast loss: {:.5f}".format(patience, lowest_epoch_loss))
 
@@ -484,14 +491,41 @@ def train(args):
 				if last_in_epoch or step % args.save_every == 0 or (last_batch and last_epoch):
 					save_model(args, saver, sess, step, dump=True, verbose=False)
 
+				conf = sess.run(model.their_confusion, feed)
+				if len(conf) == 2 and len(conf[1]) == 2:
+					true_positives.append(conf[1][1])
+					false_positives.append(conf[0][1])
+
+			highest_true_positives = float("-inf")
+			lowest_false_positives = float("inf")
+
+			if np.median(true_positives) > highest_true_positives:
+				highest_true_positives = np.median(true_positives)
+				print("New highest true positives: ", highest_true_positives)
+
+			if np.median(false_positives) < lowest_false_positives:
+				lowest_false_positives = np.median(false_positives)
+				print("New lowest false positives: ", lowest_false_positives)
+
 			# if new epoch loss is 0.5% lower than lowest loss, extend patience
 			this_epoch_loss = np.median(epoch_loss)
-			if this_epoch_loss + (this_epoch_loss * .005) < lowest_epoch_loss:
+			if this_epoch_loss + (this_epoch_loss * .008) < lowest_epoch_loss:
 				patience += 2
 				lowest_epoch_loss = this_epoch_loss
 				print("Added 2 to patience, new lowest loss is {:.5f}".format(lowest_epoch_loss))
+			elif this_epoch_loss + (this_epoch_loss * .005) < lowest_epoch_loss:
+				patience += 1
+				lowest_epoch_loss = this_epoch_loss
+				print("Added 1 to patience, new lowest loss is {:.5f}".format(lowest_epoch_loss))
+			elif this_epoch_loss + (this_epoch_loss * .008) > lowest_epoch_loss:
+				patience -= 2
+				print("Removing 2 from patience")
+			elif this_epoch_loss + (this_epoch_loss * .005) > lowest_epoch_loss:
+						patience -= 1
+						print("Removing 1 from patience")
 
 		# save model after all batches are done
+		print("\nTraining is done, saving model")
 		save_model(args, saver, sess, step, dump=True, verbose=False)
 
 

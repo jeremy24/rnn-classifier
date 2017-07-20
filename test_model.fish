@@ -16,34 +16,42 @@ set -g -x  CUDA_VISIBLE_DEVICES "0"
 if	count $argv > /dev/null
 
 	set dir $argv[1]
-    set save_dir $dir"/save"
+	set save_dir $dir"/save"
 
 	set delete_results 1
-	set n 100
+	set n 500
 	set delete_letters 1
 
 
-	for arg in $argv
-	    switch "$arg"
-	        case --no_delete
-	            set delete_results 0
-	            set delete_letters 0
-	        end
+	set concat_states 1
+
+	if [ $concat_states = 1 ]
+	    echo \n"Setting MODEL_USE_RNN_CONCAT = 1"\n
+	    set -g -x  MODEL_USE_RNN_CONCAT 1
 	end
 
-    if [ $delete_results = 1 ]
-        echo "Removing results.."
-        rm -f "./results/*"
-    end
 
-    if [ $delete_letters = 1 ]
-        echo "Removing letters.."
-        rm -f "./letters/*"
-    end
+	for arg in $argv
+		switch "$arg"
+			case --no_delete
+				set delete_results 0
+				set delete_letters 0
+			end
+	end
 
-    echo \n "Launching model..." \n
-    python ./test.py --save_dir=$save_dir -n=$n
+	if [ $delete_results = 1 ]
+		echo "Removing results.."
+		rm -f "./results/*"
+	end
+
+	if [ $delete_letters = 1 ]
+		echo "Removing letters.."
+		rm -f "./letters/*"
+	end
+
+	echo \n"Launching model..." \n
+	python ./test.py --save_dir=$save_dir -n=$n
 
 else
-    echo "Please provide the models directory"
+	echo "Please provide the models directory"
 end

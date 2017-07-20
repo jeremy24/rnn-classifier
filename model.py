@@ -23,6 +23,17 @@ os.environ['TF_CPP_MIN_LOG_LEVEL'] = '1'
 class Model(object):
 	""" The RNN model """
 
+	@staticmethod
+	def cluster(seq):
+		seq = np.array(seq).flatten()
+		added = 0
+		for i in range(1, len(seq) - 2):
+			if (seq[i-1] == 1 and seq[i+1] == 1) and seq[i] == 0:
+				seq[i] = 1
+				added += 1
+		return seq, added
+
+
 	def add_dropout(self, cells, in_prob=1.0, out_prob=1.0):
 		""" add dropout wrappers to cell[s], recursive """
 		if type(cells) is not list:
@@ -383,19 +394,27 @@ class Model(object):
 
 		print("\tSize:     ", rnn_size)
 		# with tf.name_scope("cells"):
-		self.forward_cells = rnn.MultiRNNCell(self.build_cells(size=rnn_size), state_is_tuple=True)
-		self.backward_cells = rnn.MultiRNNCell(self.build_cells(size=rnn_size), state_is_tuple=True)
+		with tf.name_scope("forward_cells"):
+			self.forward_cells = rnn.MultiRNNCell(self.build_cells(size=rnn_size), state_is_tuple=True)
+
+		with tf.name_scope("backward_cells"):
+			self.backward_cells = rnn.MultiRNNCell(self.build_cells(size=rnn_size), state_is_tuple=True)
 
 		# lets the user have a valid value to zero the cells out
-		self.cell_zero_state = (self.forward_cells.zero_state(self.args.batch_size, self.gpu_type),
+
+		with tf.name_scope("cell_zero_state"):
+			self.cell_zero_state = (self.forward_cells.zero_state(self.args.batch_size, self.gpu_type),
 								self.backward_cells.zero_state(self.args.batch_size, self.gpu_type))
 
-		self.cell_state = (self.forward_cells.zero_state(self.args.batch_size, self.gpu_type),
+		with tf.name_scope("cell_state"):
+			self.cell_state = (self.forward_cells.zero_state(self.args.batch_size, self.gpu_type),
 						   self.backward_cells.zero_state(self.args.batch_size, self.gpu_type))
 
 		print("\tInput:    ", rnn_input.shape)
 		seq_lens = [self.seq_length for _ in range(self.args.batch_size)]
-		rnn_layer_out, self.final_state = tf.nn.bidirectional_dynamic_rnn(cell_fw=self.forward_cells,
+
+		with tf.name_scope("bidirectional_rnn"):
+			rnn_layer_out, self.final_state = tf.nn.bidirectional_dynamic_rnn(cell_fw=self.forward_cells,
 																	   cell_bw=self.backward_cells,
 																	   inputs=rnn_input,
 																	   initial_state_fw=self.cell_state[0],
@@ -404,19 +423,16 @@ class Model(object):
 																	   parallel_iterations=64,
 																	   sequence_length=seq_lens)
 
-
-		# average the outputs
-		with tf.name_scope("avg_rnn_output"):
-			print("\nPooling ")
-			if "MODEL_USE_RNN_CONCAT" in os.environ and int(os.environ["MODEL_USE_RNN_CONCAT"]) == 1:
+		if "MODEL_USE_RNN_CONCAT" in os.environ and int(os.environ["MODEL_USE_RNN_CONCAT"]) == 1:
+			with tf.name_scope("concat_rnn_outputs"):
 				print("\tUsing concatted outputs!")
 				concatted = tf.concat(rnn_layer_out, 2)
 				print("\tConcatted:  ", concatted.shape)
 				rnn_output = concatted
-			else:
+		else:
+			with tf.name_scope("avg_rnn_outputs"):
 				print("\tUsing averaged outputs")
 				rnn_output = tf.divide(tf.add(rnn_layer_out[0], rnn_layer_out[1]), 2.0)
-
 
 		# rnn_output = tf.cond(tf.equal(tf.mod(self.step, 150), 0),
 		# 		true_fn=lambda: tf.add(raw_rnn_output, tf.random_normal(raw_rnn_output.shape, dtype=self.gpu_type)),
@@ -439,14 +455,13 @@ class Model(object):
 		#
 		# print("Pool Out: ", rnn_output.shape)
 
-
 		tf.summary.histogram("cell/foward_state", self.cell_state[0])
 		tf.summary.histogram("cell/backward_state", self.cell_state[1])
 
 		# the final layers
 		# maps the outputs	to [ vocab_size ] probs
 		# self.logits = tf.contrib.layers.fully_connected(output, args.vocab_size)
-		self.logits = tf.layers.dense(inputs=rnn_output, units=self.args.num_classes)
+		self.logits = tf.layers.dense(inputs=rnn_output, units=self.args.num_classes, name="logits")
 
 		# self.logits = tf.contrib.layers.fully_connected(inputs=rnn_output,
 		# 												num_outputs=self.args.num_classes)
@@ -686,6 +701,7 @@ class Model(object):
 
 	@ifnotdefined
 	def loss_weights(self):
+		print("\nInitializing loss weights:")
 		targets = tf.to_float(self.targets)
 		predictions = tf.to_float(self.twod_predictions)
 
@@ -693,8 +709,6 @@ class Model(object):
 
 		preds = tf.cast(predictions, tf.bool)
 		targs = tf.cast(targets, tf.bool)
-
-		print("Initializing loss weights:")
 
 		print("\tLabel Ratio: ", self.label_ratio)
 

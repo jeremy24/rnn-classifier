@@ -25,18 +25,11 @@ def text2png(text, fullpath, color="#FFF", bgcolor="#000",
 	lines = []
 	line = u""
 
-	can_use = [".", ",", "/", "[", "]", "(", ")", ""]
-
-	print("\nProvided text:", text)
-
-
-	print("\tUsing: ", text)
 	if len(text) == 0:
 		print("\tNo valid text, bailing out...")
 		return
 
 	for word in text.split():
-		print(word)
 		if word == REPLACEMENT_CHARACTER:  # give a blank line
 			lines.append(line[1:])  # slice the white space in the begining of the line
 			line = u""
@@ -56,13 +49,12 @@ def text2png(text, fullpath, color="#FFF", bgcolor="#000",
 	line_height = font.getsize(text)[1]
 
 	width = font.getsize(text)[0]
-	width += int( width * .10 )
+	width += int(width * .10)
 
 	if height is not None:
 		line_height = height
 
 	img_height = line_height * (len(lines) + 1)
-
 
 	img = Image.new("RGBA", (width, img_height), bgcolor)
 	draw = ImageDraw.Draw(img)
@@ -72,5 +64,4 @@ def text2png(text, fullpath, color="#FFF", bgcolor="#000",
 		draw.text((leftpadding, y), line, color, font=font)
 		y += line_height
 
-	print("\tSaving to: ", fullpath)
 	img.save(fullpath)
