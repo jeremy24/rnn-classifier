@@ -313,8 +313,9 @@ def train(args):
 
 	data_loader = TextLoader(args.data_dir, args.save_dir,
 							 args.batch_size, args.seq_length, todo=todo,
-							 labeler_fn=labeler, is_training=True, max_word_length=None)
-	# exit(1)
+							 labeler_fn=labeler, is_training=True, max_word_length=None,
+							 using_real_data=True)
+	exit(1)
 	# check compatibility if training is continued from previously saved model
 	args, checkpoint = do_init(args, data_loader)
 

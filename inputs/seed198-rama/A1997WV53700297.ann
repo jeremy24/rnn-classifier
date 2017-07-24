@@ -1,0 +1,29 @@
+T1	oxygen_pressure 8822 8827	4ϩ pa
+T2	film_thickness 3119 3125	500 nm
+T3	substrate 1133 1145	SrTiO3 ͑100͒
+T4	substrate 3155 3161	SrTiO3
+T5	substrate 4360 4366	SrTiO3
+T6	substrate 4935 4941	SrTiO3
+T7	substrate 5146 5152	SrTiO3
+T8	substrate 5488 5494	SrTiO3
+T9	substrate 5822 5828	SrTiO3
+T10	substrate 6037 6043	SrTiO3
+T11	substrate 6579 6585	SrTiO3
+T12	substrate 7433 7445	SrTiO3 ͑100͒
+T13	compound 4717 4733	La0.70Ca0.30MnO3
+T14	compound 4905 4919	La0.7Sr0.3MnO3
+T15	compound 5114 5130	La0.70Sr0.30MnO3
+T16	compound 6017 6033	La0.70Sr0.30MnO3
+T17	compound 7687 7703	La0.70Ca0.30MnO3
+T18	compound 7869 7885	La0.70Ca0.30MnO3
+T19	compound 1089 1103	La1Ϫx Bx MnO3Ϫ
+A1	Material0 T19
+#1	AnnotatorNotes T19	La0.7Ca0.30MnO3
+T20	compound 1104 1115	␦ ͑BϭCa,Sr͒
+A2	Material1 T20
+#2	AnnotatorNotes T20	La0.7Sr0.3MnO3
+A3	Material0 T3
+A4	Material1 T3
+#3	AnnotatorNotes T3	(100) SrTiO3
+T21	irrelevant_paper 13 19	Notes1
+#4	AnnotatorNotes T21	not epitaxial

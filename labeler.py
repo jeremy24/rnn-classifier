@@ -4,20 +4,22 @@ from enum import Enum
 import numpy as np
 
 
+from process_real_data import pair_files
+
 class LabelTypes(Enum):
 	VOWELS = 0
 	COMMON_WORDS = 1
 	ONE_WORD = 2
 	STARTS_WITH_TH = 3
 	IMPLICATIONS = 4
-	NONE = 5
+	REAL_DATA = 5
 
 
-def labeler(seq, method=None, replace_char=None, words_to_use=10):
+def labeler(seq, method=None, replace_char=None, words_to_use=10, filepath=None):
 	replace_char = chr(1) if replace_char is None else str(replace_char)
 
 	# for testing
-	method = LabelTypes.ONE_WORD
+	method = LabelTypes.REAL_DATA
 
 	assert len(replace_char) == 1, "Replacement char has a length > 1"
 	ret = None
@@ -50,8 +52,8 @@ def labeler(seq, method=None, replace_char=None, words_to_use=10):
 			ret = _implications(seq, replace_char)
 		except Exception as ex:
 			raise Exception("Error labeling using implications:", ex)
-	elif method == LabelTypes.NONE:
-		ret = _none(seq, replace_char)
+	elif method == LabelTypes.REAL_DATA:
+		ret = _real_data(seq, replace_char)
 
 	if ret is None:
 		raise Exception("Unable to label data via provided method: ", method)
@@ -60,7 +62,8 @@ def labeler(seq, method=None, replace_char=None, words_to_use=10):
 	return ret
 
 
-def _none(seq, replace_char):
+def _real_data(seq, replace_char):
+	labels = []
 	return seq
 
 def _common_words(seq, replace_char, words_to_use=5):

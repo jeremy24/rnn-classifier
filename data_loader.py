@@ -8,19 +8,21 @@ import math
 import time
 import re
 import json
+import glob
 # from multiprocessing import Process, RawValue, Lock
 # from multiprocessing.dummy import Pool as ThreadPool
 from six.moves import cPickle
 import numpy as np
 
 from decorators import *
-
+from process_real_data import process_ann_files
 
 class TextLoader(object):
 	def __init__(self, data_dir, save_dir, batch_size, seq_length,
 				 encoding='utf-8', todo=1000000,
 				 labeler_fn=None, is_training=False,
-				 read_only=False, max_word_length=None):
+				 read_only=False, max_word_length=None,
+				 using_real_data=False):
 		self.data_dir = data_dir
 		self.batch_size = batch_size
 		self.seq_length = seq_length
@@ -29,6 +31,7 @@ class TextLoader(object):
 		self.save_dir = save_dir
 		self.pointer = 0
 		self.max_word_length = max_word_length
+		self.using_real_data = using_real_data
 
 		# self.vocab = dict()
 		self.chars = dict()
@@ -86,13 +89,14 @@ class TextLoader(object):
 		"""Take in ALL the x data and return {x: list, y: list}"""
 		start = time.time()
 
+		print("\tSeq type: ", type(seq))
 		seq = np.array(seq)
 		ord_mapper = np.vectorize(ord)
 		encoded_seq = ord_mapper(seq)
 		self.chars = np.unique(seq)
 
 		print("Extracted out all chars, have: ", len(self.vocab), " Took: ", time.time() - start)
-		labels = np.array(self.labeler_fn(raw_str), dtype=np.uint16)
+		labels = np.array(self.labeler_fn(raw_str, filepath=filepath), dtype=np.uint16)
 		encoded_seq = np.array(encoded_seq, dtype=np.uint16)
 		labels = np.ndarray.flatten(np.array(labels))
 		assert len(encoded_seq) == len(labels), "Lens don't match {} != {}".format(len(encoded_seq), len(labels))
@@ -113,87 +117,144 @@ class TextLoader(object):
 		print("\tNew length: {:,}".format(len(keep)))
 		return keep
 
+	def real_data_helper(self, dir_path):
+		print("\tdirpath: [{}]  type: {}".format(dir_path, type(dir_path)))
+		ext = ".labeled"
+		folder = "labeled_data"
+		assert os.path.exists(dir_path)
+		replacement = chr(1)
+		process_ann_files(dir_path, replace_char=replacement, ext=ext, folder=folder)
+		print("\tDone processing ann files")
+		labeled_dir = os.path.join(dir_path, folder)
+
+
+		seq = ""
+		seq_ = ""
+		input_dir = dir_path + "/**/*.txt"
+		print("\tInput files: ", input_dir)
+		files =  glob.glob(input_dir, recursive=True)
+		assert len(files) > 0, "Input directory is empty"
+		print("\tProcessing {:,} input files".format(len(files)))
+		for filename in files:
+			with open(filename, "r") as fin:
+				for line in fin:
+					seq += line
+			labels = filename.split("/")
+			labels[-1] = folder + "/" + labels[-1] + ext
+			labels = "/".join(labels)
+
+			with open(labels, "r") as fin:
+				for line in fin:
+					seq_ += line
+
+		seq_ = list(seq_)
+		seq = list(seq)
+		for i in range(len(seq_)):
+			seq_[i] = seq_[i] == replacement
+
+		seq = np.array(seq)
+		labels = np.array(seq_)
+
+		ord_mapper = np.vectorize(ord)
+		encoded_seq = ord_mapper(seq)
+		self.chars = np.unique(seq)
+
+		assert len(encoded_seq) == len(labels)
+		assert len(set(labels)) == 2
+		# exit(1)
+		return {"x": encoded_seq, "y": labels}
+
 	def preprocess(self, input_path, todo=float("inf")):
 
-		files = os.listdir(input_path)
-		files = [os.path.join(input_path, filename) for filename in files if filename[0] != "."]
-		print("Files: ", files)
 
 		data = None
-
-		print("\nProcessing files:")
-		for filename in files:
-			print("\t{}".format(filename))
-			data = data + "\n\n" if data is not None else ""
-			with open(filename, "r") as f:
-				for line in f:
-					data += line
-
-		print("\n")
-
-		if self.max_word_length is not None:
-			data = self.trim_to_max_word_length(data, self.max_word_length)
-
-		self.chars = list()
-		# self.vocab = dict()
-		# self.vocab_size = 0
-
-		min_percent = .05  # 0.20
-
-		if "MODEL_DATA_MIN_PERCENT" in os.environ:
-			try:
-				passed_value = float(os.environ["MODEL_DATA_MIN_PERCENT"])
-				if 0.0 < passed_value <= 1.0:
-					min_percent = passed_value
-					print("Min percent passed in from env and was changed to: ", min_percent)
-				elif 0.0 < passed_value <= 100.0:
-					min_percent = passed_value / 100.0
-					print("Min percent passed in from env and was changed to: ", min_percent)
-				else:
-					print("\nInvalid value passed in for min percent, not using:  ", passed_value)
-			except ValueError:
-				print("\nMin percent passed as env variable is not a valid float, not using it: ",
-					  os.environ["MODEL_DATA_MIN_PERCENT"], "\n")
-
-		if todo < len(data) * min_percent:
-			print("todo of {:,} is less than {}% of {:,}, changing..."
-				  .format(todo, int(min_percent * 100), len(data)))
-
-			todo = len(data) * min_percent
-			todo = int(todo)
-
-		print("Preprocessing {:,} items from data".format(todo))
-		print("Replacing spaces: {}".format(self.replace_multiple_spaces))
-		print("Trimming data to length of todo")
-
-		if self.replace_multiple_spaces:
-			print("\nStripping multiple newlines")
-			print("\tBefore: {:,}".format(len(data)))
-			# data = re.sub(r"[\n]{3,}", "\n", data)
-			data = re.sub(r"[\t]{2}", "\t", data)
-			data = re.sub(r"[\t]{2}", "\t", data)
-			data = re.sub(r"[\n]{2}", "\n", data)
-			print("\tAfter:  {:,}".format(len(data)))
-
-		data = data[:todo]
-		# flatten = lambda l: [item for sublist in l for item in sublist]
 		start = time.time()
-		seqs = list(data)
 
-		# make sure its flat
-		seqs = np.ndarray.flatten(np.array(seqs))
-
-		label_start = time.time()
-
-		print("Starting preprocess {:,} items"
-			  .format(len(seqs)))
+		print("\nProcessing files from input path: {}".format(input_path))
 
 		# get labels for the data
-		preprocess_data = self.preprocess_helper(seqs, data)
+		if self.using_real_data:
+			print("\tUsing real data")
+			preprocess_data = self.real_data_helper(input_path)
+		else:
+			print("\tUsing other data")
+			files = os.listdir(input_path)
+			files = [os.path.join(input_path, filename) for filename in files if filename[0] != "."]
+
+			for filename in files:
+				print("\t{}".format(filename))
+				data = data + "\n\n" if data is not None else ""
+				with open(filename, "r") as f:
+					for line in f:
+						data += line
+
+			print("\n")
+
+			if self.max_word_length is not None:
+				data = self.trim_to_max_word_length(data, self.max_word_length)
+
+			self.chars = list()
+			# self.vocab = dict()
+			# self.vocab_size = 0
+
+			min_percent = .05  # 0.20
+
+			if "MODEL_DATA_MIN_PERCENT" in os.environ:
+				try:
+					passed_value = float(os.environ["MODEL_DATA_MIN_PERCENT"])
+					if 0.0 < passed_value <= 1.0:
+						min_percent = passed_value
+						print("Min percent passed in from env and was changed to: ", min_percent)
+					elif 0.0 < passed_value <= 100.0:
+						min_percent = passed_value / 100.0
+						print("Min percent passed in from env and was changed to: ", min_percent)
+					else:
+						print("\nInvalid value passed in for min percent, not using:  ", passed_value)
+				except ValueError:
+					print("\nMin percent passed as env variable is not a valid float, not using it: ",
+						  os.environ["MODEL_DATA_MIN_PERCENT"], "\n")
+
+			if todo < len(data) * min_percent:
+				print("todo of {:,} is less than {}% of {:,}, changing..."
+					  .format(todo, int(min_percent * 100), len(data)))
+
+				todo = len(data) * min_percent
+				todo = int(todo)
+
+			print("Preprocessing {:,} items from data".format(todo))
+			print("Replacing spaces: {}".format(self.replace_multiple_spaces))
+			print("Trimming data to length of todo")
+
+			if self.replace_multiple_spaces:
+				print("\nStripping multiple newlines")
+				print("\tBefore: {:,}".format(len(data)))
+				# data = re.sub(r"[\n]{3,}", "\n", data)
+				data = re.sub(r"[\t]{2}", "\t", data)
+				data = re.sub(r"[\t]{2}", "\t", data)
+				data = re.sub(r"[\n]{2}", "\n", data)
+				print("\tAfter:  {:,}".format(len(data)))
+
+			data = data[:todo]
+			# flatten = lambda l: [item for sublist in l for item in sublist]
+			start = time.time()
+			seqs = list(data)
+
+			# make sure its flat
+			seqs = np.ndarray.flatten(np.array(seqs))
+
+			label_start = time.time()
+
+			print("Starting preprocess {:,} items"
+				  .format(len(seqs)))
+
+			preprocess_data = self.preprocess_helper(seqs, data)
+			print("Labels generated in {:,.3f}".format(time.time() - label_start))
+
+		# if/else is done so grab the correct data out
 		encoded = preprocess_data["x"]
 		labels = preprocess_data["y"]
 
-		print("Labels generated in {:,.3f}".format(time.time() - label_start))
+
 
 		# drop any dupes
 		self.chars = list(set(self.chars))
@@ -240,20 +301,24 @@ class TextLoader(object):
 	def to_gb(num):
 		return num / math.pow(2, 30)
 
-	def sample_batches(self, size=15):
+	def sample_batches(self, size=30):
+		print("\nSAMPLE")
 		batch = self.test_batches[0]
 
 		#  batch[batch_num][x|y][index_in_seq]
-		x = batch[0][0][:size]
-		y = batch[1][0][:size]
+		x = batch[0][1][:size]
+		y = np.array(batch[1][1][:size])
 
-		print("len: ", len(batch), len(batch[0]), len(batch[0][0]))
-		print(len(x), len(y))
-		print(x[0])
+		assert len(batch) == 2, "Batch has more than x, y pairs in it"
+		print("\tBatch size: {:,}".format(len(batch[0])))
+		print("\tSeq length: {:,}".format(len(batch[0][0])))
+		print("\tSample size: {:,}".format(size))
 
+		assert len(x) == len(y)
 		z = [self.reverse_vocab[idx] for idx in x]
-		item = np.matrix([z, y])
-		print(item)
+		print("X: ", "".join(z).replace("\n", " "))
+		print("Y: ", "".join([str(item) for item in y]))
+		print("END SAMPLE\n")
 
 	def trim_data(self):
 		# chop off the end to make sure we have an even number of items

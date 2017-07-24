@@ -362,7 +362,7 @@ def run_test(sess, model, x_seq, y_seq, args, state, number=0):
 		tp = confusion[1, 1]
 
 
-		precision = tp / (fp + tp) if (fp + tp) != 0 else
+		precision = tp / (fp + tp) if (fp + tp) != 0 else 0.0
 		recall = tp / (tp + fn)
 		accuracy = (tn + tp) / (tn + fp + fn + tp)
 		sensitivity = recall  # same thing

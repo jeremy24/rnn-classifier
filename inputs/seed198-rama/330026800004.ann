@@ -1,0 +1,5 @@
+T1	substrate 735 746	SrTiO (001)
+T2	substrate 1229 1241	(110) SrTiO 
+T3	repetition_rate 4809 4813	2 Hz
+T4	film_thickness 7364 7370	1.2 nm
+T5	film_thickness 7788 7793	20 nm

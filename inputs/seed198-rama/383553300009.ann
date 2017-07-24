@@ -1,0 +1,47 @@
+T1	oxygen_pressure 5461 5471	~300 mTorr
+T2	oxygen_pressure 5628 5634	~1 atm
+T3	substrate 1056 1068	SrTiO3 (100)
+T4	substrate 2447 2453	LaAlO3
+T5	substrate 2458 2464	SrTiO3
+T6	substrate 4911 4917	SrTiO3
+T7	film_thickness 6856 6860	5 nm
+T8	film_thickness 7376 7381	20 nm
+T9	film_thickness 7391 7395	5 nm
+T10	film_thickness 9361 9367	~20 nm
+T11	film_thickness 9379 9385	~20 nm
+T12	film_thickness 10515 10520	40 nm
+T13	film_thickness 11631 11636	20 nm
+T14	film_thickness 11646 11651	20 nm
+T15	film_thickness 11772 11777	40 nm
+T16	film_thickness 12440 12445	20 nm
+T17	compound 957 971	La0.7Sr0.3MnO3
+T18	compound 2308 2314	BiFeO3
+T19	compound 2349 2363	La0.7Sr0.3MnO3
+T20	compound 2663 2679	La0.67Ca0.33MnO3
+T21	compound 4047 4053	BiFeO3
+T22	compound 4803 4817	La0.7Sr0.3MnO3
+T23	growth_temperature 5450 5456	750 °C
+T24	repetition_rate 5255 5259	5 Hz
+A1	Material0 T17
+A2	Material0 T24
+T25	note 5311 5320;5321 5357	arget and substrate was kept constant at 50 mm
+A3	Material0 T25
+#1	AnnotatorNotes T25	target substrate distance 5cm
+A4	Material0 T23
+A5	Material0 T1
+A6	Material0 T7
+T26	note 1017 1029	Y0.5Ca0.5MnO
+A7	Material0 T26
+#2	AnnotatorNotes T26	film capped with YCMO of thickness 20 nm
+A8	Material1 T10
+#3	AnnotatorNotes T10	20 nm
+A9	Material1 T22
+A10	Material1 T23
+A11	Material1 T1
+A12	Material0 T6
+A13	Material1 T6
+#4	AnnotatorNotes T6	(001) SrTiO3
+T27	critical_magnetic_temperature 5181 5182	0
+A14	Material0 T27
+#5	AnnotatorNotes T27	290 K
+T28	done 0 5	Done!
