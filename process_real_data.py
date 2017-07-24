@@ -24,9 +24,20 @@ def replace(string, start, end, inclusive=True):
 
 
 def get_start_ends(ann, filter_anns=None):
+	"""
+	Given an annotation, extract a list of (start, end) tuples.
+	This will work with multiple pairs in a line
+	:param ann:
+	:param filter_anns:
+	:return: list of (start, end) pairs
+	"""
+
+	# some inefficient filters
 	ann = [str(item).strip().split() for item in ann]
 	ann = [item[1:] for item in ann if "T" in item[0]]
 	ann = [item[1:] for item in ann if filter_anns is None or item[0] in filter_anns]
+	ann = [item for item in ann if item[1] != "irrelevant_paper"]
+
 	ret = list()
 	for row in ann:
 		idxs = list()
@@ -57,6 +68,14 @@ def get_start_ends(ann, filter_anns=None):
 
 
 def pair_files(dirname, anns=None, filename=None):
+	"""
+	Given a dir, make copies of all txt files based on ann files.
+	Copies will have all annotated values replaced with REPLACE_CHAR
+	:param dirname:
+	:param anns:
+	:param filename:
+	:return:
+	"""
 	print("\nPairing files")
 	print("\tDirname: {}".format(dirname))
 	assert os.path.exists(dirname), "provided dir {} does not exist".format(dirname)
@@ -98,6 +117,14 @@ def pair_files(dirname, anns=None, filename=None):
 
 
 def write_out(base_path, clean_data, ext=".labeled", folder="labeled"):
+	"""
+	Dump out the data
+	:param base_path:
+	:param clean_data:
+	:param ext:
+	:param folder:
+	:return:
+	"""
 	for (name, data) in clean_data:
 		name = name.split("/")
 		filename = name[-1]

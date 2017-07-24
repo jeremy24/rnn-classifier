@@ -1,8 +1,11 @@
+"""
+A bunch of ways to label sequences
+All pretty inefficient but working
+"""
 import gc
 import re
 from enum import Enum
 import numpy as np
-
 
 from process_real_data import pair_files
 
@@ -16,22 +19,41 @@ class LabelTypes(Enum):
 
 
 def labeler(seq, method=None, replace_char=None, words_to_use=10, filepath=None):
+	"""
+	"Given a sequence, return a labeled sequence based on the provided method
+	:param seq:
+	:param method:
+	:param replace_char:
+	:param words_to_use:
+	:param filepath:
+	:return:
+	"""
+
+	# if none provided use ASCII NULL
 	replace_char = chr(1) if replace_char is None else str(replace_char)
 
 	# for testing
-	method = LabelTypes.REAL_DATA
+	method = LabelTypes.REAL_DATA if method is None else method
 
+	assert words_to_use > 0, "Words to use is less than one"
+	assert len(seq) > 0, "Sequence length is 0"
 	assert len(replace_char) == 1, "Replacement char has a length > 1"
 	ret = None
 
+
+
 	if not isinstance(method, LabelTypes):
 		raise Exception("Method passed to labeler must be a LabelType enum")
-
 	if method == LabelTypes.VOWELS:
 		try:
 			ret = _vowels(seq, replace_char)
 		except Exception as ex:
 			raise Exception("Error labeling using vowels:", ex)
+	elif method == LabelTypes.STARTS_WITH_TH:
+		try:
+			ret = _starts_with_th(seq, replace_char)
+		except Exception as ex:
+			raise Exception("Error labeling using starts with th words:", ex)
 	elif method == LabelTypes.COMMON_WORDS:
 		try:
 			ret = _common_words(seq, replace_char, words_to_use=words_to_use)
@@ -42,11 +64,6 @@ def labeler(seq, method=None, replace_char=None, words_to_use=10, filepath=None)
 			ret = _common_words(seq, replace_char, words_to_use=1)
 		except Exception as ex:
 			raise Exception("Error labeling using one word:", ex)
-	elif method == LabelTypes.STARTS_WITH_TH:
-		try:
-			ret = _starts_with_th(seq, replace_char)
-		except Exception as ex:
-			raise Exception("Error labeling using starts_with_th words:", ex)
 	elif method == LabelTypes.IMPLICATIONS:
 		try:
 			ret = _implications(seq, replace_char)
@@ -66,15 +83,7 @@ def _real_data(seq, replace_char):
 	labels = []
 	return seq
 
-def _common_words(seq, replace_char, words_to_use=5):
-	"""Generate labels for a given sequence"""
-	print("\nLabeler:")
-	print("\tSeq length: {:,} ".format(len(seq)))
-	orig_len = len(seq)
-	replace_char = str(replace_char)
-
-	# the word list is the top 10 most
-	# common words in the sequence
+def N_top_words(seq, N):
 	words = list()
 	b = seq.split(" ")
 	wc = dict()
@@ -85,31 +94,45 @@ def _common_words(seq, replace_char, words_to_use=5):
 		wc[x] += 1
 
 	print("\nWords being used:")
+	# grab top N words
+	# skip if length < 3 or not all alphanumerical chars
+	# add spaces before and after
 	for w in sorted(wc, key=wc.get, reverse=True):
-		if len(words) == words_to_use:
+		if len(words) == N:
 			break
-		# print("\tWord: ", w)
 		if len(w) < 3 or not str(w).isalnum():
-			# print("\t\tSkipping...")
 			continue
-		# print("\t")
-		w_ = " " + w + " "
-		# w_ = w_.replace("\\", "\\\\")
-		print("\t[{}]:  {:,}  word len: {}".format(w_, wc[w], len(w_)))
-		words.append(w_)
+		words.append(w)
+	return words
+
+
+def _common_words(seq, replace_char, words_to_use=5):
+	"""
+	Find N most common words and label them
+
+	:param seq:
+	:param replace_char:
+	:param words_to_use:
+	:return:
+	"""
+	print("\nLabeler:")
+	print("\tSeq length: {:,} ".format(len(seq)))
+	orig_len = len(seq)
+	replace_char = str(replace_char)
+
+	# the word list is the top N most
+	# common words in the sequence
+	words = N_top_words(seq, words_to_use)
 
 	print("\nGenerating labels based on {} words".format(len(words)))
-	# expressions = list()
 	ret = np.zeros(len(seq), dtype=np.uint8)
 
-	def make_exp(w, space=True):
-		if not space:
-			return r"(" + w + ")"
-		return r"( " + w + " )"
-
-	expressions = [make_exp(x, space=False) for x in words]
+	expressions = [r"\b" + x + r"\b" for x in words]
 
 	i = 0
+	# foreach target
+	# 1. build a replacement string
+	# 2. replace target in seq
 	for word, exp in zip(words, expressions):
 		gc.collect()
 		replace_string = replace_char * len(word)
@@ -142,21 +165,26 @@ def bucket_by_size(words):
 
 
 def _implications(seq, replace_char):
-	"""Generate labels for a given sequence"""
+	"""
+	Find all strings that begin with "implications" or "important" and highlight
+	until the end of that sentence
+	:param seq:
+	:param replace_char:
+	:return:
+	"""
 	print("\nLabeler:")
 	print("\tSeq length: {:,} ".format(len(seq)))
 	orig_len = len(seq)
 	replace_char = str(replace_char)
 
-	# all words that start with th, whole words only
+	# all phrases that start with implications, whole words only
 	find_exp = r"implications\s[A-Za-z0-0)(}{\]\[\-_\s=~]+[\n\.!?]"
 	found_words = re.findall(find_exp, seq)
-	print("Found words: ", len(found_words))
-	print("words[0]")
-	print(found_words[0])
-
+	print("Found phrases: ", len(found_words))
 
 	phrases = list()
+	# make sure we have a list of string
+	# flatten out any tuples
 	for chunk in found_words:
 		print(type(chunk))
 		if type(chunk) != str:
@@ -166,6 +194,7 @@ def _implications(seq, replace_char):
 			phrases.append(chunk)
 	print("phrases length: ", len(phrases))
 
+	# also phrases that start with important
 	find_exp = r"important\s[A-Za-z0-0)(}{\]\[\-_\s=~]+[\n\.!?]"
 	found_words = re.findall(find_exp, seq)
 
@@ -178,9 +207,10 @@ def _implications(seq, replace_char):
 			phrases.append(chunk)
 	print("phrases length: ", len(phrases))
 
-
+	# sort by phrase length
 	phrases.sort(key=lambda x: len(x), reverse=True)
 
+	# group phrases by length,
 	print("\nGenerating labels based on {} sentence chunks".format(len(phrases)))
 	sizes = bucket_by_size(phrases)
 	print("\tHave {} different sentence lengths".format(len(sizes)))
@@ -220,9 +250,57 @@ def _implications(seq, replace_char):
 	return ret
 
 
+def _vowels(seq, replace_char):
+	"""
+	Label all vowels
+	:param seq:
+	:param replace_char:
+	:return:
+	"""
+	print("\nLabeler:")
+	print("\tSeq length: {:,} ".format(len(seq)))
+	orig_len = len(seq)
+	replace_char = str(replace_char)
+
+	words = ["a", "e", "i", "o", "u"]
+
+	print("\nGenerating labels based on {:,} words".format(len(words)))
+
+	ret = np.zeros(len(seq), dtype=np.uint8)
+
+	def make_exp(w, space=True):
+		if not space:
+			return r"(" + w + ")"
+		return r"( " + w + " )"
+
+	expressions = [make_exp(x, space=False) for x in words]
+
+	# each replace string is [ XXXX ] where X is the replace_char
+	i = 0
+	for word, exp in zip(words, expressions):
+		gc.collect()
+		replace_string = replace_char * len(word)  # (" " + replace_char * len(word) + " ")
+		seq = re.sub(exp, replace_string, seq, flags=re.IGNORECASE)
+		print("\t{:02d}: Done with: {}".format(i, word))
+		i += 1
+
+	print("\n\tDone with all replacements")
+
+	for i in range(len(seq)):
+		ret[i] = seq[i] == replace_char
+
+	assert len(ret) == len(seq), "{} != {}".format(len(ret), orig_len)
+	return ret
+
 
 def _starts_with_th(seq, replace_char):
-	"""Generate labels for a given sequence"""
+	"""
+	Replace all phrases that start with th
+	This will bucket phrases by size to improve efficiency
+	:param seq:
+	:param replace_char:
+	:return:
+	"""
 	print("\nLabeler:")
 	print("\tSeq length: {:,} ".format(len(seq)))
 	orig_len = len(seq)
@@ -291,42 +369,4 @@ def _starts_with_th(seq, replace_char):
 		ret[i] = seq[i] == replace_char
 
 	assert len(ret) == orig_len, "{} != {}".format(len(ret), orig_len)
-	return ret
-
-
-def _vowels(seq, replace_char):
-	"""Generate labels for a given sequence"""
-	print("\nLabeler:")
-	print("\tSeq length: {:,} ".format(len(seq)))
-	orig_len = len(seq)
-	replace_char = str(replace_char)
-
-	words = ["a", "e", "i", "o", "u"]
-
-	print("\nGenerating labels based on {} words".format(len(words)))
-
-	ret = np.zeros(len(seq), dtype=np.uint8)
-
-	def make_exp(w, space=True):
-		if not space:
-			return r"(" + w + ")"
-		return r"( " + w + " )"
-
-	expressions = [make_exp(x, space=False) for x in words]
-
-	# each replace string is [ XXXX ] where X is the replace_char
-	i = 0
-	for word, exp in zip(words, expressions):
-		gc.collect()
-		replace_string = replace_char * len(word)  # (" " + replace_char * len(word) + " ")
-		seq = re.sub(exp, replace_string, seq, flags=re.IGNORECASE)
-		print("\t{:02d}: Done with: {}".format(i, word))
-		i += 1
-
-	print("\n\tDone with all replacements")
-
-	for i in range(len(seq)):
-		ret[i] = seq[i] == replace_char
-
-	assert len(ret) == len(seq), "{} != {}".format(len(ret), orig_len)
 	return ret

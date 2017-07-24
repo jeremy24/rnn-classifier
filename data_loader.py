@@ -23,6 +23,7 @@ class TextLoader(object):
 				 labeler_fn=None, is_training=False,
 				 read_only=False, max_word_length=None,
 				 using_real_data=False):
+
 		self.data_dir = data_dir
 		self.batch_size = batch_size
 		self.seq_length = seq_length
@@ -96,7 +97,7 @@ class TextLoader(object):
 		self.chars = np.unique(seq)
 
 		print("Extracted out all chars, have: ", len(self.vocab), " Took: ", time.time() - start)
-		labels = np.array(self.labeler_fn(raw_str, filepath=filepath), dtype=np.uint16)
+		labels = np.array(self.labeler_fn(raw_str), dtype=np.uint16)
 		encoded_seq = np.array(encoded_seq, dtype=np.uint16)
 		labels = np.ndarray.flatten(np.array(labels))
 		assert len(encoded_seq) == len(labels), "Lens don't match {} != {}".format(len(encoded_seq), len(labels))

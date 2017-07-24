@@ -315,7 +315,7 @@ def train(args):
 							 args.batch_size, args.seq_length, todo=todo,
 							 labeler_fn=labeler, is_training=True, max_word_length=None,
 							 using_real_data=True)
-	exit(1)
+	# exit(1)
 	# check compatibility if training is continued from previously saved model
 	args, checkpoint = do_init(args, data_loader)
 
@@ -411,7 +411,8 @@ def train(args):
 			true_positives = list()
 			false_positives = list()
 
-			if epoch > patience:
+			# disable early stopping for now
+			if epoch > patience and False:
 				print("Patience is larger than epoch, breaking at Epoch {}".format(epoch))
 				args.epoch_stopped_on = epoch
 				break

@@ -473,7 +473,7 @@ def test(args):
 
 			accs_with_cluster = list()
 
-			n_to_sample = 10
+			n_to_sample = 50
 			have_sampled = 0
 
 			np.random.shuffle(data_loader.test_batches)
@@ -508,7 +508,7 @@ def test(args):
 
 					string = ""
 					for char in chars:
-						if not char.isalnum():
+						if not char.isalnum() and not char.isspace():
 							string += "_"
 						else:
 							string += char
