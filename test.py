@@ -258,6 +258,17 @@ def get_chars(x_batch, flatten=True):
 	return orig
 
 
+def fix_confusion(confusion):
+	assert type(confusion) == np.ndarray
+	confusion = np.array(confusion).tolist()
+	confusion = list(confusion)
+	if len(confusion) == 1:
+		confusion.append([0, 0])
+	if len(confusion[0]) == 1:
+		confusion[0].append(0)
+	return np.array(confusion)
+
+
 def run_test(sess, model, x_seq, y_seq, args, state, number=0):
 	""" run a test for a single batch """
 	# both are => [ batch_size, seq_length ]
@@ -324,6 +335,9 @@ def run_test(sess, model, x_seq, y_seq, args, state, number=0):
 		html = head
 		result = y_bar
 
+		confusion = list()
+		cluster_confusion = list()
+
 		try:
 			y_seq = np.ndarray.flatten(y_seq)
 			y_bar = np.ndarray.flatten(y_bar)
@@ -339,12 +353,16 @@ def run_test(sess, model, x_seq, y_seq, args, state, number=0):
 			print("labels y_seq:", set(y_seq))
 			exit(1)
 
+
+		confusion = fix_confusion(confusion)
+
 		tn = confusion[0, 0]
 		fp = confusion[0, 1]
 		fn = confusion[1, 0]
 		tp = confusion[1, 1]
 
-		precision = tp / (fp + tp)
+
+		precision = tp / (fp + tp) if (fp + tp) != 0 else
 		recall = tp / (tp + fn)
 		accuracy = (tn + tp) / (tn + fp + fn + tp)
 		sensitivity = recall  # same thing
@@ -358,6 +376,9 @@ def run_test(sess, model, x_seq, y_seq, args, state, number=0):
 		ret["recall"] = recall
 		ret["sensitivity"] = sensitivity
 		ret["specificity"] = specificity
+
+
+		cluster_confusion = fix_confusion(cluster_confusion)
 
 
 		tn = cluster_confusion[0, 0]

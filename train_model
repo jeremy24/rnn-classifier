@@ -26,7 +26,7 @@ if	count $argv > /dev/null
 	set rnn_size 500
 	set gpu 0
 	set seq_len 128
-	set num_epochs 300
+	set num_epochs 100
 	set save_every 200 
 	set data_dir .
 	set log_dir $dir"/logs"
@@ -38,17 +38,12 @@ if	count $argv > /dev/null
 
 
 	set concat_states 1
-
-	if [ $concat_states = 1 ]
-	    echo \n"Setting MODEL_USE_RNN_CONCAT = 1"\n
-	    set -g -x  MODEL_USE_RNN_CONCAT 1
-	end
+	set embedding_size 500
 
 
-    set -g -x MODEL_DATA_MIN_PERCENT 100
 
+	set -g -x MODEL_DATA_MIN_PERCENT 100
 
-	set embedding_size 200
 
 	set init_from ""
 	set init 0
@@ -57,8 +52,14 @@ if	count $argv > /dev/null
 
 	set do_delete 0
 	set do_test 0
-	
 	set no_delete 0
+
+
+
+	if [ $concat_states = 1 ]
+		echo \n"Setting MODEL_USE_RNN_CONCAT = 1"\n
+		set -g -x  MODEL_USE_RNN_CONCAT 1
+	end
 
 	for arg in $argv
 		switch "$arg"

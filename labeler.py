@@ -10,13 +10,14 @@ class LabelTypes(Enum):
 	ONE_WORD = 2
 	STARTS_WITH_TH = 3
 	IMPLICATIONS = 4
+	NONE = 5
 
 
 def labeler(seq, method=None, replace_char=None, words_to_use=10):
 	replace_char = chr(1) if replace_char is None else str(replace_char)
 
 	# for testing
-	method = LabelTypes.IMPLICATIONS
+	method = LabelTypes.ONE_WORD
 
 	assert len(replace_char) == 1, "Replacement char has a length > 1"
 	ret = None
@@ -49,6 +50,8 @@ def labeler(seq, method=None, replace_char=None, words_to_use=10):
 			ret = _implications(seq, replace_char)
 		except Exception as ex:
 			raise Exception("Error labeling using implications:", ex)
+	elif method == LabelTypes.NONE:
+		ret = _none(seq, replace_char)
 
 	if ret is None:
 		raise Exception("Unable to label data via provided method: ", method)
@@ -56,6 +59,9 @@ def labeler(seq, method=None, replace_char=None, words_to_use=10):
 	assert len(ret) == len(seq)
 	return ret
 
+
+def _none(seq, replace_char):
+	return seq
 
 def _common_words(seq, replace_char, words_to_use=5):
 	"""Generate labels for a given sequence"""

@@ -19,7 +19,7 @@ if	count $argv > /dev/null
 	set save_dir $dir"/save"
 
 	set delete_results 1
-	set n 500
+	set n 100
 	set delete_letters 1
 
 
