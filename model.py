@@ -383,8 +383,9 @@ class Model(object):
 		# rnn_input = cluster_output
 
 		# # if using JUST the RNN
-		rnn_size = self.args.embedding_size
-		rnn_input = inputs
+		with tf.name_scope("rnn_size"):
+			rnn_size = self.args.embedding_size
+			rnn_input = inputs
 
 
 		print("\nRNN:")
@@ -406,6 +407,8 @@ class Model(object):
 			self.cell_zero_state = (self.forward_cells.zero_state(self.args.batch_size, self.gpu_type),
 								self.backward_cells.zero_state(self.args.batch_size, self.gpu_type))
 
+		# during training this will be fed in to override it with
+		# the previous state
 		with tf.name_scope("cell_state"):
 			self.cell_state = (self.forward_cells.zero_state(self.args.batch_size, self.gpu_type),
 						   self.backward_cells.zero_state(self.args.batch_size, self.gpu_type))
@@ -423,16 +426,15 @@ class Model(object):
 																	   parallel_iterations=64,
 																	   sequence_length=seq_lens)
 
-		if "MODEL_USE_RNN_CONCAT" in os.environ and int(os.environ["MODEL_USE_RNN_CONCAT"]) == 1:
-			with tf.name_scope("concat_rnn_outputs"):
+		with tf.name_scope("final_rnn_output"):
+			if "MODEL_USE_RNN_CONCAT" in os.environ and int(os.environ["MODEL_USE_RNN_CONCAT"]) == 1:
 				print("\tUsing concatted outputs!")
-				concatted = tf.concat(rnn_layer_out, 2)
+				concatted = tf.concat(rnn_layer_out, 2, name="concat_rnn_outputs")
 				print("\tConcatted:  ", concatted.shape)
 				rnn_output = concatted
-		else:
-			with tf.name_scope("avg_rnn_outputs"):
+			else:
 				print("\tUsing averaged outputs")
-				rnn_output = tf.divide(tf.add(rnn_layer_out[0], rnn_layer_out[1]), 2.0)
+				rnn_output = tf.divide(tf.add(rnn_layer_out[0], rnn_layer_out[1]), 2.0, name="average_rnn_outputs")
 
 		# rnn_output = tf.cond(tf.equal(tf.mod(self.step, 150), 0),
 		# 		true_fn=lambda: tf.add(raw_rnn_output, tf.random_normal(raw_rnn_output.shape, dtype=self.gpu_type)),
@@ -455,7 +457,7 @@ class Model(object):
 		#
 		# print("Pool Out: ", rnn_output.shape)
 
-		tf.summary.histogram("cell/foward_state", self.cell_state[0])
+		tf.summary.histogram("cell/forward_state", self.cell_state[0])
 		tf.summary.histogram("cell/backward_state", self.cell_state[1])
 
 		# the final layers
@@ -500,9 +502,10 @@ class Model(object):
 
 		self.global_step = tf.Variable(-1, name="global_step", trainable=False)
 
-		self.min_learn_rate = .005
+		self.min_learn_rate = .00005
 
-		self.lr_decay_fn = tf.train.exponential_decay(self.args.learning_rate,
+		with tf.name_scope("lr_decay"):
+			self.lr_decay_fn = tf.train.exponential_decay(self.args.learning_rate,
 													  global_step=tf.assign_add(self.global_step, 1, use_locking=True,
 																				name="inc_global_step"),
 													  decay_steps=self.num_batches,
@@ -510,10 +513,11 @@ class Model(object):
 													  staircase=False, name="lr")
 
 		# don't allow the learning rate to go below a certain minimum
-		self.lr = self.args.learning_rate
-		self.lr = tf.cond(tf.less(self.lr, self.min_learn_rate),
-						  true_fn=lambda: self.min_learn_rate,
-						  false_fn=lambda: self.lr_decay_fn)
+		with tf.name_scope("lr"):
+			self.lr = self.args.learning_rate
+			self.lr = tf.cond(tf.less(self.lr, self.min_learn_rate),
+							  true_fn=lambda: self.min_learn_rate,
+							  false_fn=lambda: self.lr_decay_fn)
 
 		print("\nSetup learning rate decay:")
 		print("\tlr: {}\n\tdecay every {} steps\n\tdecay rate: {}\n\tstaircase: {}"
@@ -527,13 +531,19 @@ class Model(object):
 		# 	self.train_op = self.optimizer.minimize(self.loss)
 
 
-		tvars = tf.trainable_variables()
-		gradients = tf.gradients(self.loss, tvars)
-		clipped_gradients, self.global_gradient_norm = tf.clip_by_global_norm(gradients, self.max_gradient)
+		with tf.name_scope("clip_gradients"):
+			tvars = tf.trainable_variables()
+			gradients = tf.gradients(self.loss, tvars)
+			clipped_gradients, self.global_gradient_norm = tf.clip_by_global_norm(gradients, self.max_gradient)
 
-		tf.summary.scalar("global_grad_norm", self.global_gradient_norm)
+			tf.summary.scalar("global_grad_norm", self.global_gradient_norm)
 
-		self.optimizer = tf.train.AdamOptimizer(learning_rate=self.lr)
+		with tf.name_scope("optimizer"):
+			self.optimizer = tf.train.AdamOptimizer(learning_rate=self.lr)
+
+		# self.optimizer = tf.train.AdagradOptimizer(learning_rate=self.lr)
+
+		# self.optimizer = tf.train.RMSPropOptimizer(learning_rate=self.lr)
 
 		try:
 			self.train_gradients = zip(clipped_gradients, tvars)
@@ -543,7 +553,10 @@ class Model(object):
 			), ex)
 			exit(1)
 
-		self.train_op = self.optimizer.apply_gradients(self.train_gradients)
+		with tf.name_scope("apply_gradients"):
+			self.train_op = self.optimizer.apply_gradients(self.train_gradients,
+													   global_step=self.global_step,
+													   name="apply_gradients")
 
 		try:
 			for g, cg in zip(gradients, clipped_gradients):
@@ -580,7 +593,8 @@ class Model(object):
 		tf.summary.scalar("confusion/false_positives", self.false_positives)
 		tf.summary.scalar("confusion/true_negatives", self.true_negatives)
 
-		self.add_summaries(self.probs, "probability")
+		with tf.name_scope("probability_summary"):
+			self.add_summaries(self.probs, "probability")
 
 		# add this to make sure the annoying thing is initialized like it should be...
 		confusion = self.confusion
@@ -695,9 +709,10 @@ class Model(object):
 
 	@ifnotdefined
 	def twod_predictions(self):
-		predictions = tf.nn.softmax(self.logits)
-		# assert tf.rank(predictions) > 2, "Can't get 2d predictions from tensor of rank < 3"
-		return tf.argmax(predictions, 2)
+		with tf.name_scope("2d_predictions"):
+			predictions = tf.nn.softmax(self.logits)
+			# assert tf.rank(predictions) > 2, "Can't get 2d predictions from tensor of rank < 3"
+			return tf.argmax(predictions, 2)
 
 	@ifnotdefined
 	def loss_weights(self):
@@ -726,8 +741,9 @@ class Model(object):
 		true_negatives = tf.to_float(tf.logical_and(tf.logical_not(preds), tf.logical_not(targs)))
 		true_positives = tf.to_float(tf.logical_and(preds, targs))
 
-		self.false_negatives = tf.to_int32(tf.reduce_sum(false_negatives))
-		self.true_positives = tf.to_int32(tf.reduce_sum(true_positives))
+
+		self.false_negatives = tf.to_int32(tf.reduce_sum(false_negatives), name="false_negatives")
+		self.true_positives = tf.to_int32(tf.reduce_sum(true_positives), name="true_positives")
 
 		# make sure no zeros end up in the weights matrix
 		scale_factor = tf.cond(tf.greater(self.false_negative_loss_scale_factor, 0),
@@ -737,7 +753,7 @@ class Model(object):
 		print("\tCapping minimum false negative scale factor at: ", self.args.label_ratio)
 		self._loss_scale = tf.cond(tf.less(scale_factor, self.args.label_ratio),
 						true_fn=lambda: tf.to_float(self.args.label_ratio),
-						false_fn=lambda: scale_factor)
+						false_fn=lambda: scale_factor, name="loss_scale")
 
 		tf.summary.scalar("loss_scale_used", self._loss_scale)
 
@@ -763,7 +779,7 @@ class Model(object):
 
 	@staticmethod
 	def loglog(item):
-		return tf.log(tf.log(tf.to_float(item)))
+		return tf.log(tf.log(tf.to_float(item)), name="loglog")
 
 	@staticmethod
 	def fn_punish(number):
@@ -798,27 +814,31 @@ class Model(object):
 
 	@ifnotdefined
 	def predictions(self):
-		predictions = tf.reshape(tf.nn.softmax(self.logits), [-1, self.args.num_classes])
-		predictions = tf.argmax(predictions, 1)
-		return predictions
+		with tf.name_scope("predictions"):
+			predictions = tf.reshape(tf.nn.softmax(self.logits), [-1, self.args.num_classes])
+			predictions = tf.argmax(predictions, 1)
+			return predictions
 
 	@ifnotdefined
 	def recall(self):
-		targets = tf.reshape(self.targets, [-1])
-		recall, _ = tf.metrics.recall(labels=targets, predictions=self.predictions)
-		return recall
+		with tf.name_scope("recall"):
+			targets = tf.reshape(self.targets, [-1])
+			recall, _ = tf.metrics.recall(labels=targets, predictions=self.predictions)
+			return recall
 
 	@ifnotdefined
 	def accuracy(self):
-		targets = tf.reshape(self.targets, [-1])
-		accuracy, _ = tf.metrics.accuracy(labels=targets, predictions=self.predictions)
-		return accuracy
+		with tf.name_scope("accuracy"):
+			targets = tf.reshape(self.targets, [-1])
+			accuracy, _ = tf.metrics.accuracy(labels=targets, predictions=self.predictions)
+			return accuracy
 
 	@ifnotdefined
 	def precision(self):
-		targets = tf.reshape(self.targets, [-1])
-		precision, _ = tf.metrics.precision(labels=targets, predictions=self.predictions)
-		return tf.metrics.precision(labels=targets, predictions=self.predictions)
+		with tf.name_scope("precision"):
+			targets = tf.reshape(self.targets, [-1])
+			precision, _ = tf.metrics.precision(labels=targets, predictions=self.predictions)
+			return tf.metrics.precision(labels=targets, predictions=self.predictions)
 
 	@define_scope
 	def their_confusion(self):

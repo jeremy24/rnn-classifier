@@ -120,6 +120,7 @@ def pretty_print(item, step, total_steps, epoch, print_cycle, end, start, avg_ti
 	str2 = "lr: {:.6f}  label ratio: {:.5f}%\n\ttime/{}: {:.3f}".format(item["lr"], ratio, print_cycle, end - start)
 	str3 = " time/step = {:.3f}  time left: {:.2f}m g_step: {}".format(avg_time_per, time_left, item["g_step"])
 	print(str1 + str2 + str3)
+	return ratio
 
 
 def pretty_print_confusion(confusion):
@@ -351,6 +352,10 @@ def train(args):
 	args.data["losses"] = list()
 	args.data["avg_time_per_step"] = list()
 	args.data["logged_time"] = list()
+	args.data["false_positives"] = list()
+	args.data["false_negatives"] = list()
+
+	args.data["label_ratio"] = list()
 	
 	# the number of trainable params in the model
 	args.num_params = int(np.sum([np.prod(v.get_shape().as_list()) for v in tf.trainable_variables()]))
@@ -463,7 +468,12 @@ def train(args):
 							print("Weights:  TP: {:.3f}  TN: {:.3f}  FN: {:.3f}  FP: {:.3f}".format(*sum_weights))
 
 						# with Confusion(sess, model, feed) as confusion_matrix:
-						pretty_print(item, step, total_steps, epoch, print_cycle, print_cycle_end, print_cycle_time, avg_time_per, x, y)
+						ratio = pretty_print(item, step, total_steps, epoch, print_cycle, print_cycle_end, print_cycle_time, avg_time_per, x, y)
+						args.data["label_ratio"].append(float(ratio))
+						print("False negs: ", int(item["confusion"][1][0]))
+						args.data["false_positives"].append(int(item["confusion"][0][1]))
+						args.data["false_negatives"].append(int(item["confusion"][1][0]))
+
 
 						# reset the timer
 						print_cycle_time = time.time()
