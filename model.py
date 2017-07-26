@@ -539,11 +539,11 @@ class Model(object):
 			tf.summary.scalar("global_grad_norm", self.global_gradient_norm)
 
 		with tf.name_scope("optimizer"):
-			self.optimizer = tf.train.AdamOptimizer(learning_rate=self.lr)
+			# self.optimizer = tf.train.AdamOptimizer(learning_rate=self.lr)
 
 		# self.optimizer = tf.train.AdagradOptimizer(learning_rate=self.lr)
 
-		# self.optimizer = tf.train.RMSPropOptimizer(learning_rate=self.lr)
+			self.optimizer = tf.train.RMSPropOptimizer(learning_rate=self.lr)
 
 		try:
 			self.train_gradients = zip(clipped_gradients, tvars)

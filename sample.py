@@ -1,15 +1,14 @@
 from __future__ import print_function
-import tensorflow as tf
 
 import argparse
 import os
+
+import tensorflow as tf
+from six import text_type
 from six.moves import cPickle
 
 from model import Model
 
-from six import text_type
-
-from utils import TextLoader
 
 def main():
 	parser = argparse.ArgumentParser(
