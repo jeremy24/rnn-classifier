@@ -354,6 +354,7 @@ def train(args):
 	args.data["logged_time"] = list()
 	args.data["false_positives"] = list()
 	args.data["false_negatives"] = list()
+	args.data["step"] = list()
 
 	args.data["label_ratio"] = list()
 	
@@ -473,7 +474,7 @@ def train(args):
 						print("False negs: ", int(item["confusion"][1][0]))
 						args.data["false_positives"].append(int(item["confusion"][0][1]))
 						args.data["false_negatives"].append(int(item["confusion"][1][0]))
-
+						args.data["step"].append(int(item["g_step"]))
 
 						# reset the timer
 						print_cycle_time = time.time()
