@@ -412,6 +412,7 @@ def test(args):
 	saved_args = None
 	data_loader = None
 	model = None
+	letter_dir = "./assets/letters/"
 
 	with open(os.path.join(args.save_dir, 'config.pkl'), 'rb') as fin:
 		saved_args = cPickle.load(fin)
@@ -526,18 +527,18 @@ def test(args):
 					j = 0
 					for letter in chars:
 						if y[j] == 1:
-							wanted_seq.append("letters/{}_{}.png".format("blue", letter))
+							wanted_seq.append(letter_dir + "/{}_{}.png".format("blue", letter))
 						else:
-							wanted_seq.append("letters/{}_{}.png".format("black", letter))
+							wanted_seq.append(letter_dir + "/{}_{}.png".format("black", letter))
 
 						if y_bar[j] == 1 and y[j] == 1:
-							got_seq.append("letters/{}_{}.png".format("blue", letter))
+							got_seq.append(letter_dir + "/{}_{}.png".format("blue", letter))
 						elif y_bar[j] == 0 and y[j] == 1:
-							got_seq.append("letters/{}_{}.png".format("red", letter))
+							got_seq.append(letter_dir + "/{}_{}.png".format("red", letter))
 						elif y_bar[j] == 1 and y[j] == 0:
-							got_seq.append("letters/{}_{}.png".format("orange", letter))
+							got_seq.append(letter_dir + "/{}_{}.png".format("orange", letter))
 						else:
-							got_seq.append("letters/{}_{}.png".format("black", letter))
+							got_seq.append(letter_dir + "/{}_{}.png".format("black", letter))
 						j += 1
 
 					command = 'convert -background "#FFFFFF" -set colorspace RGB +append {} ./results/wanted.png'.format(" ".join(wanted_seq))

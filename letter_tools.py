@@ -13,7 +13,7 @@ def _is_ascii(s):
 
 
 def text2png(text, fullpath, color="#FFF", bgcolor="#000",
-			 fontfullpath="fonts/Oswald-Bold.ttf",
+			 fontfullpath="assets/fonts/Oswald-Bold.ttf",
 			 fontsize=35, leftpadding=3, rightpadding=3,
 			 width=20, height=None):
 	REPLACEMENT_CHARACTER = u'\uFFFD'
