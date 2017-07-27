@@ -26,12 +26,17 @@ class Model(object):
 	@staticmethod
 	def cluster(seq):
 		seq = np.array(seq).flatten()
-		added = 0
+		changed = 0
 		for i in range(1, len(seq) - 2):
+			# if highlight i if i-1 and i+1 are highlighted as well
 			if (seq[i-1] == 1 and seq[i+1] == 1) and seq[i] == 0:
 				seq[i] = 1
-				added += 1
-		return seq, added
+				changed += 1
+			# unhighlight i if no neighbors are highlighted
+			if (seq[i-1] == 0 and seq[i+1] == 0) and seq[i] == 1:
+				seq[i] = 0
+				changed += 1
+		return seq, changed
 
 
 	def add_dropout(self, cells, in_prob=1.0, out_prob=1.0):
@@ -266,9 +271,9 @@ class Model(object):
 		if args.model == "gru":
 			print("Using GRU Cell")
 			self.cell_fn = rnn.GRUCell
-		elif args.model == "glstm":
-			print("Using GLSTM Cell")
-			self.cell_fn = rnn.GLSTMCell
+		elif args.model == "nas":
+			print("Using NAS Cell")
+			self.cell_fn = rnn.NASCell
 		else:
 			print("Using LSTM Cell")
 			self.cell_fn = rnn.LSTMCell
@@ -539,11 +544,11 @@ class Model(object):
 			tf.summary.scalar("global_grad_norm", self.global_gradient_norm)
 
 		with tf.name_scope("optimizer"):
-			# self.optimizer = tf.train.AdamOptimizer(learning_rate=self.lr)
+			self.optimizer = tf.train.AdamOptimizer(learning_rate=self.lr)
 
 		# self.optimizer = tf.train.AdagradOptimizer(learning_rate=self.lr)
 
-			self.optimizer = tf.train.RMSPropOptimizer(learning_rate=self.lr)
+			# self.optimizer = tf.train.RMSPropOptimizer(learning_rate=self.lr)
 
 		try:
 			self.train_gradients = zip(clipped_gradients, tvars)

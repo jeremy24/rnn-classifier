@@ -349,6 +349,7 @@ def train(args):
 	# setup stuff for more logging 
 	# so we can save it to JSON
 	args.data = dict()
+	args.data["epoch_size"] = len(data_loader.train_batches)
 	args.data["losses"] = list()
 	args.data["avg_time_per_step"] = list()
 	args.data["logged_time"] = list()
@@ -418,7 +419,7 @@ def train(args):
 			false_positives = list()
 
 			# disable early stopping for now
-			if epoch > patience and False:
+			if epoch > patience:
 				print("Patience is larger than epoch, breaking at Epoch {}".format(epoch))
 				args.epoch_stopped_on = epoch
 				break

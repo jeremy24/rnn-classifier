@@ -7,6 +7,7 @@ from __future__ import print_function
 import argparse
 import os
 import matplotlib
+import csv
 import plotly.plotly as py
 import plotly.graph_objs as go
 
@@ -287,7 +288,6 @@ def run_test(sess, model, x_seq, y_seq, args, state, number=0):
 		original = get_chars(x_batch=x_seq, flatten=False)
 		y_bar = list()
 
-
 		for item in y_seq_:
 			sublist = list()
 			for sub in item:
@@ -298,7 +298,6 @@ def run_test(sess, model, x_seq, y_seq, args, state, number=0):
 		# print("y_bar: ", y_bar[0])
 		# print("y_seq: ", y_seq[0])n
 		# accuracy = np.mean(np.equal(y_seq, y_bar))
-
 
 		params = {
 			"label_ratio": round(args.label_ratio, 3),
@@ -318,9 +317,6 @@ def run_test(sess, model, x_seq, y_seq, args, state, number=0):
 			"item_list": [make_html(original[i], y_seq[i], y_bar[i]) for i in range(len(original))]
 		}
 
-
-		# print("Built params")
-
 		with open("./partials/header.html", "r") as fin:
 			head = fin.read()
 
@@ -330,7 +326,6 @@ def run_test(sess, model, x_seq, y_seq, args, state, number=0):
 				print("Error compiling head template", ex)
 				exit(1)
 			head = head.render(params)
-
 
 		html = head
 		result = y_bar
@@ -353,14 +348,12 @@ def run_test(sess, model, x_seq, y_seq, args, state, number=0):
 			print("labels y_seq:", set(y_seq))
 			exit(1)
 
-
 		confusion = fix_confusion(confusion)
 
 		tn = confusion[0, 0]
 		fp = confusion[0, 1]
 		fn = confusion[1, 0]
 		tp = confusion[1, 1]
-
 
 		precision = tp / (fp + tp) if (fp + tp) != 0 else 0.0
 		recall = tp / (tp + fn)
@@ -369,31 +362,25 @@ def run_test(sess, model, x_seq, y_seq, args, state, number=0):
 		specificity = tn / (tn + fp)
 
 		ret = dict()
-		ret["accuracy"] = accuracy
+		ret["accuracy"] = float(accuracy)
 		# ret["state"] = state
-		ret["loss"] = loss
-		ret["precision"] = precision
-		ret["recall"] = recall
-		ret["sensitivity"] = sensitivity
-		ret["specificity"] = specificity
-
+		ret["loss"] = float(loss)
+		ret["precision"] = float(precision)
+		ret["recall"] = float(recall)
+		ret["sensitivity"] = float(sensitivity)
+		ret["specificity"] = float(specificity)
+		ret["ratio"] = float(np.sum(y_seq) / len(y_seq))
 
 		cluster_confusion = fix_confusion(cluster_confusion)
-
 
 		tn = cluster_confusion[0, 0]
 		fp = cluster_confusion[0, 1]
 		fn = cluster_confusion[1, 0]
 		tp = cluster_confusion[1, 1]
 
-		precision = tp / (fp + tp)
-		recall = tp / (tp + fn)
 		accuracy = (tn + tp) / (tn + fp + fn + tp)
-		sensitivity = recall  # same thing
-		specificity = tn / (tn + fp)
 
-
-		ret["clustered_accuracy"] = accuracy
+		ret["clustered_accuracy"] = float(accuracy)
 
 		# print(tp, fp, tn, fn)
 		# print(tp, "/", "(", fp, "+", tp, ")")
@@ -412,7 +399,6 @@ def test(args):
 	saved_args = None
 	data_loader = None
 	model = None
-	letter_dir = "./assets/letters/"
 
 	with open(os.path.join(args.save_dir, 'config.pkl'), 'rb') as fin:
 		saved_args = cPickle.load(fin)
@@ -467,6 +453,7 @@ def test(args):
 			accs = list()
 			precs = list()
 			recalls = list()
+			all_metrics = list()
 			i = 0
 
 			results = list()
@@ -474,7 +461,7 @@ def test(args):
 
 			accs_with_cluster = list()
 
-			n_to_sample = 50
+			n_to_sample = 10
 			have_sampled = 0
 
 			np.random.shuffle(data_loader.test_batches)
@@ -509,7 +496,7 @@ def test(args):
 
 					string = ""
 					for char in chars:
-						if not char.isalnum() and not char.isspace():
+						if not char.isalnum():
 							string += "_"
 						else:
 							string += char
@@ -527,18 +514,18 @@ def test(args):
 					j = 0
 					for letter in chars:
 						if y[j] == 1:
-							wanted_seq.append(letter_dir + "/{}_{}.png".format("blue", letter))
+							wanted_seq.append("letters/{}_{}.png".format("blue", letter))
 						else:
-							wanted_seq.append(letter_dir + "/{}_{}.png".format("black", letter))
+							wanted_seq.append("letters/{}_{}.png".format("black", letter))
 
 						if y_bar[j] == 1 and y[j] == 1:
-							got_seq.append(letter_dir + "/{}_{}.png".format("blue", letter))
+							got_seq.append("letters/{}_{}.png".format("blue", letter))
 						elif y_bar[j] == 0 and y[j] == 1:
-							got_seq.append(letter_dir + "/{}_{}.png".format("red", letter))
+							got_seq.append("letters/{}_{}.png".format("red", letter))
 						elif y_bar[j] == 1 and y[j] == 0:
-							got_seq.append(letter_dir + "/{}_{}.png".format("orange", letter))
+							got_seq.append("letters/{}_{}.png".format("orange", letter))
 						else:
-							got_seq.append(letter_dir + "/{}_{}.png".format("black", letter))
+							got_seq.append("letters/{}_{}.png".format("black", letter))
 						j += 1
 
 					command = 'convert -background "#FFFFFF" -set colorspace RGB +append {} ./results/wanted.png'.format(" ".join(wanted_seq))
@@ -555,10 +542,16 @@ def test(args):
 				accs.append(metrics["accuracy"])
 				precs.append(metrics["precision"])
 				recalls.append(metrics["recall"])
+				all_metrics.append(metrics)
 				accs_with_cluster.append(metrics["clustered_accuracy"])
 				i += 1
 
 
+			with open("./figures/metrics_data.csv", "w") as csvfile:
+				writer = csv.DictWriter(csvfile, fieldnames=list(all_metrics[0].keys()))
+				writer.writeheader()
+				writer.writerows(all_metrics)
+				print("\nWrote all metrics csvfile\n")
 
 			y_bar = np.array(results)
 			wanted = np.array(wanted)
