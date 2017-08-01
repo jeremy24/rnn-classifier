@@ -523,11 +523,11 @@ def train(args):
 
 			# if new epoch loss is 0.5% lower than lowest loss, extend patience
 			this_epoch_loss = np.median(epoch_loss)
-			if this_epoch_loss + (this_epoch_loss * .008) < lowest_epoch_loss:
+			if this_epoch_loss + (this_epoch_loss * .008) <= lowest_epoch_loss:
 				patience += 2
 				lowest_epoch_loss = this_epoch_loss
 				print("Added 2 to patience, new lowest loss is {:.5f}".format(lowest_epoch_loss))
-			elif this_epoch_loss + (this_epoch_loss * .005) < lowest_epoch_loss:
+			elif this_epoch_loss + (this_epoch_loss * .005) <= lowest_epoch_loss:
 				patience += 1
 				lowest_epoch_loss = this_epoch_loss
 				print("Added 1 to patience, new lowest loss is {:.5f}".format(lowest_epoch_loss))

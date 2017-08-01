@@ -413,6 +413,7 @@ class TextLoader(object):
 
 	@staticmethod
 	def drop_sparse(batch_size, max_drop, y_batches, x_batches):
+		"""Does not actually drop anything"""
 		print("\nDropping sparse labeled rows")
 		data = list()
 		sums = list()
@@ -421,9 +422,9 @@ class TextLoader(object):
 			x, y = x_batches[i], y_batches[i]
 			y = np.array(y)
 			# if less than 5% are highlighted, make eligible to dropping
-			if dropped < max_drop and np.sum(np.ndarray.flatten(y)) < batch_size * .05:
-				dropped += 1
-				continue
+			# if dropped < max_drop and np.sum(np.ndarray.flatten(y)) < batch_size * .05:
+			# 	dropped += 1
+			# 	continue
 			sums.append(np.sum(y))
 			item = np.array([x, y])
 			item.flags.writeable = False

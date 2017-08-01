@@ -355,7 +355,7 @@ def run_test(sess, model, x_seq, y_seq, args, state, number=0):
 		fn = confusion[1, 0]
 		tp = confusion[1, 1]
 
-		precision = tp / (fp + tp) if (fp + tp) != 0 else 0.0
+		precision = tp / (fp + tp)
 		recall = tp / (tp + fn)
 		accuracy = (tn + tp) / (tn + fp + fn + tp)
 		sensitivity = recall  # same thing
@@ -390,7 +390,7 @@ def run_test(sess, model, x_seq, y_seq, args, state, number=0):
 
 	except Exception as ex:
 		print("run_test threw exception: ", ex)
-		raise(ex)
+		raise ex
 		# exit(1)
 
 
@@ -423,12 +423,12 @@ def test(args):
 
 	def t_print(stuff):
 		"""pretty print stats from a list"""
-		print("\tMean:    {:.3f}".format(np.mean(stuff)))
-		print("\tMedian:  {:.3f}".format(np.median(stuff)))
-		print("\tMax:     {:.3f}".format(np.max(stuff)))
-		print("\tMin:     {:.3f}".format(np.min(stuff)))
-		print("\tStd:     {:.3f}".format(np.std(stuff)))
 
+		print("\tMean:    {:.3f}".format(np.nanmean(stuff)))
+		print("\tMedian:  {:.3f}".format(np.nanmedian(stuff)))
+		print("\tMax:     {:.3f}".format(np.nanmax(stuff)))
+		print("\tMin:     {:.3f}".format(np.nanmin(stuff)))
+		print("\tStd:     {:.3f}".format(np.nanstd(stuff)))
 
 	with tf.Session() as sess:
 		tf.global_variables_initializer().run()
@@ -536,6 +536,8 @@ def test(args):
 					os.system(command)
 					# exit(1)
 					# os.system("rm ./results/wanted.png ./results/got.png")
+
+				metrics["batch"] = int(i)
 
 
 				losses.append(metrics["loss"])

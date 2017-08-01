@@ -274,6 +274,8 @@ class Model(object):
 		elif args.model == "nas":
 			print("Using NAS Cell")
 			self.cell_fn = rnn.NASCell
+		elif args.model == "glstm":
+			self.cell_fn = rnn.GLSTMCell
 		else:
 			print("Using LSTM Cell")
 			self.cell_fn = rnn.LSTMCell
