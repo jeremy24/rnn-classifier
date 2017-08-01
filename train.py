@@ -113,7 +113,7 @@ def pretty_print(item, step, total_steps, epoch, print_cycle, end, start, avg_ti
 	steps_left = total_steps - step
 	time_left = steps_left * avg_time_per / 60
 
-	yes_labels = np.sum(np.array(y).flatten())
+	yes_labels = np.nansum(np.array(y).flatten())
 	ratio = yes_labels / len(np.array(x).flatten()) * 100.0
 	print(item["confusion"])
 	str1 = "{}/{} (epoch {}), train_loss: {:.5f}, ".format(step, total_steps, epoch, item["train_loss"])

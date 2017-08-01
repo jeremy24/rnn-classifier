@@ -18,6 +18,8 @@ if	count $argv > /dev/null
 	set dir $argv[1]
 	set save_dir $dir"/save"
 
+
+	set run $argv[2]
 	set delete_results 1
 	set n 500
 	set delete_letters 1
@@ -50,7 +52,7 @@ if	count $argv > /dev/null
 	end
 
 	echo \n"Launching model..." \n
-	python ./test.py --save_dir=$save_dir -n=$n
+	python ./test.py --save_dir=$save_dir -n=$n --run=$run
 
 else
 	echo "Please provide the models directory"

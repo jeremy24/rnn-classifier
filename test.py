@@ -32,8 +32,10 @@ def main():
 		formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 	parser.add_argument('--save_dir', type=str, default='save',
 						help='model directory to load from')
-	parser.add_argument('-n', type=int, default=100,
+	parser.add_argument('-n', type=int, default=10000,
 						help='number of test batches to sample')
+	parser.add_argument('--run', type=int, default=1,
+						help='ID of the test run')
 	parser.add_argument('--sample', type=int, default=1,
 						help='0 to use max at each timestep, 1 to sample at '
 							 'each timestep, 2 to sample on spaces')
@@ -160,11 +162,11 @@ def make_html(original, expected, labels):
 	if len(original) != len(labels):
 		raise ValueError("label and original lengths don't match: {} != {}".format(len(original), len(labels)))
 
-	tp = 100 * np.sum(np.logical_and(expected, labels)) / len(labels)
-	fp = 100 * np.sum(np.logical_and(np.logical_not(expected), labels)) / len(labels)
+	tp = 100 * np.nansum(np.logical_and(expected, labels)) / len(labels)
+	fp = 100 * np.nansum(np.logical_and(np.logical_not(expected), labels)) / len(labels)
 
-	tn = 100 * np.sum(np.logical_and(np.logical_not(expected), np.logical_not(labels))) / len(labels)
-	fn = 100 * np.sum(np.logical_and(expected, np.logical_not(labels))) / len(labels)
+	tn = 100 * np.nansum(np.logical_and(np.logical_not(expected), np.logical_not(labels))) / len(labels)
+	fn = 100 * np.nansum(np.logical_and(expected, np.logical_not(labels))) / len(labels)
 
 	assert 98 < int(tp + fp + tn + fn) < 102, "Total not between 98 and 102 => {}".format(int(tp + fp + tn + fn))
 
@@ -369,7 +371,7 @@ def run_test(sess, model, x_seq, y_seq, args, state, number=0):
 		ret["recall"] = float(recall)
 		ret["sensitivity"] = float(sensitivity)
 		ret["specificity"] = float(specificity)
-		ret["ratio"] = float(np.sum(y_seq) / len(y_seq))
+		ret["ratio"] = float(np.nansum(y_seq) / len(y_seq))
 
 		cluster_confusion = fix_confusion(cluster_confusion)
 
@@ -487,7 +489,7 @@ def test(args):
 
 				b = args.n if args.n < len(data_loader.test_batches) else len(data_loader.test_batches)
 
-				if (have_sampled < n_to_sample) and (np.sum(y.flatten()) > 0 or np.sum(np.array(y_bar).flatten()) > 0):
+				if (have_sampled < n_to_sample) and (np.nansum(y.flatten()) > 0 or np.nansum(np.array(y_bar).flatten()) > 0):
 					have_sampled += 1
 					x = x[0]
 					y = y[0]
@@ -538,7 +540,7 @@ def test(args):
 					# os.system("rm ./results/wanted.png ./results/got.png")
 
 				metrics["batch"] = int(i)
-
+				metrics["run"] = int(args.run)
 
 				losses.append(metrics["loss"])
 				accs.append(metrics["accuracy"])
@@ -548,12 +550,20 @@ def test(args):
 				accs_with_cluster.append(metrics["clustered_accuracy"])
 				i += 1
 
+			keys = sorted(list(all_metrics[0].keys()))
 
-			with open("./figures/metrics_data.csv", "w") as csvfile:
-				writer = csv.DictWriter(csvfile, fieldnames=list(all_metrics[0].keys()))
-				writer.writeheader()
-				writer.writerows(all_metrics)
-				print("\nWrote all metrics csvfile\n")
+			csv_path = os.path.join(args.save_dir, "../metrics.csv".format(args.run))
+			if not os.path.exists(csv_path):
+				with open(csv_path, "w") as csv_file:
+					writer = csv.DictWriter(csv_file, fieldnames=keys)
+					writer.writeheader()
+					writer.writerows(all_metrics)
+					print("\nWrote all metrics csvfile\n")
+			else:
+				with open(csv_path, "a") as csv_file:
+					writer = csv.DictWriter(csv_file, fieldnames=keys)
+					writer.writerows(all_metrics)
+					print("\nWrote all metrics csvfile\n")
 
 			y_bar = np.array(results)
 			wanted = np.array(wanted)
@@ -565,7 +575,7 @@ def test(args):
 			results = os.listdir("./results/")
 			results = [os.path.join("./results/", path) for path in results if "sample" in str(path)]
 			results = " ".join(results)
-			print("Results: ", results)
+			# print("Results: ", results)
 
 			os.system('convert -append {} ./results/final_result.png'.format(results))
 
@@ -582,22 +592,22 @@ def test(args):
 
 			do_vis(args.save_dir, nbins=saved_args.seq_length // 3, todo=50)
 
-			print("\nFor {} batches".format(i))
-			print("cluster Accuracy:")
-			t_print(accs_with_cluster)
-
-
-			print("Accuracy:")
-			t_print(accs)
-
-			print("Loss:")
-			t_print(losses)
-
-			print("Precision:")
-			t_print(precs)
-
-			print("Recall:")
-			t_print(recalls)
+			# print("\nFor {} batches".format(i))
+			# print("cluster Accuracy:")
+			# t_print(accs_with_cluster)
+			#
+			#
+			# print("Accuracy:")
+			# t_print(accs)
+			#
+			# print("Loss:")
+			# t_print(losses)
+			#
+			# print("Precision:")
+			# t_print(precs)
+			#
+			# print("Recall:")
+			# t_print(recalls)
 		else:
 			print("\nInvalid checkpoint file")
 
