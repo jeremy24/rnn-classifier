@@ -14,75 +14,25 @@ from tensorflow.contrib import seq2seq as s2s
 import numpy as np
 
 from decorators import *
-
+from ModelBase import ModelBase
 
 # Filter out INFO logs
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '1'
 
 
-class Model(object):
+class Model(ModelBase):
 	""" The RNN model """
 
-	@staticmethod
-	def cluster(seq):
-		seq = np.array(seq).flatten()
-		changed = 0
-		for i in range(1, len(seq) - 2):
-			# if highlight i if i-1 and i+1 are highlighted as well
-			if (seq[i-1] == 1 and seq[i+1] == 1) and seq[i] == 0:
-				seq[i] = 1
-				changed += 1
-			# unhighlight i if no neighbors are highlighted
-			if (seq[i-1] == 0 and seq[i+1] == 0) and seq[i] == 1:
-				seq[i] = 0
-				changed += 1
-		return seq, changed
-
-
-	def add_dropout(self, cells, in_prob=1.0, out_prob=1.0):
+	def add_dropout(self, cells, in_prob=1.0, out_prob=1.0, state_prob=1.0):
 		""" add dropout wrappers to cell[s], recursive """
 		if type(cells) is not list:
-			return rnn.DropoutWrapper(cells, input_keep_prob=in_prob,
-									  output_keep_prob=out_prob)
+			return self._apply_rnn_dropout(cells, in_prob, out_prob, state_prob,
+										   variational=True, input_size=self.embedding_size,
+										   dtype=self.gpu_type)
 		else:
-			ret = [self.add_dropout(cell, in_prob, out_prob) for cell in cells]
-			return ret
-
-	# this currently isn't being used right now
-	# due to the overhaul to use a bi-directional RNN
-	# def build_outputs(self, inputs):
-	# 	"""
-	# 	:param inputs:
-	# 	:return: outputs, last_state
-	# 	"""
-	# 	with tf.name_scope("outputs"):
-	#
-	# 		print("\nBuilding decoder helper")
-	#
-	# 		if not self.is_training:
-	# 			# if not training we still setup the training helper so the data i
-	# 			# is passed through, but we manually decode it first
-	# 			print("\tUsing the inference helper")
-	# 			seq_lens = tf.fill([self.args.batch_size], self.args.seq_length)
-	# 			embedded_inputs = tf.nn.embedding_lookup(self.embedding,
-	# 													 tf.to_int32(self.input_data))
-	# 			decoder_helper = s2s.TrainingHelper(embedded_inputs, seq_lens)
-	# 		else:
-	# 			print("\tUsing the training helper:")
-	# 			seq_lens = tf.fill([self.args.batch_size], self.args.seq_length)
-	# 			print("\tseq_lens: ", seq_lens.shape)
-	# 			print("\tinputs shape: ", inputs.shape)
-	# 			decoder_helper = s2s.TrainingHelper(inputs, seq_lens)
-	#
-	# 		# the meat
-	# 		decoder = s2s.BasicDecoder(self.cell, decoder_helper, self.initial_state)
-	#
-	# 		# what we want
-	# 		decoder_output, last_state, output_len = s2s.dynamic_decode(decoder)
-	# 		outputs = decoder_output.rnn_output
-	#
-	# 		print("Decoder outputs converted to floats")
-	# 		return tf.to_float(outputs), last_state
+			return [self._apply_rnn_dropout(cell, in_prob, out_prob, state_prob,
+										   variational=True, input_size=self.embedding_size,
+										   dtype=self.gpu_type) for cell in cells]
 
 	def hang_gpu_variables(self):
 
@@ -137,9 +87,9 @@ class Model(object):
 		cells.append(last)
 		return cells
 
-	def build_one_cell(self, dropout=True):
+	def get_one_cell(self, add_dropout=True):
 		c = self.cell_fn(self.args.rnn_size)
-		if dropout:
+		if add_dropout:
 			c = self.add_dropout(c, self.args.input_keep_prob, self.args.output_keep_prob)
 		return c
 
@@ -164,7 +114,7 @@ class Model(object):
 			ret = self.build_three_layers()
 		else:
 			for x in range(self.args.num_layers):
-				ret.append(self.build_one_cell())
+				ret.append(self.get_one_cell())
 			print("\tDo not have a routine to make {} layers, using default"
 				  .format(self.args.num_layers))
 		return ret
@@ -226,11 +176,19 @@ class Model(object):
 	def zero_states(self):
 		pass
 
-	def __init__(self, args, num_batches=None, training=True):
+	def __init__(self, args, num_batches=None, training=True, gpu_dtype=tf.float32):
 		""" init """
+
+		# setup base class
+		super().__init__(args, num_batches, training, gpu_dtype)
+
+
 		print("\n\nBuilding a NEW model")
 		print("\tNum batches: ", num_batches)
 		print("\tIs training: ", training)
+
+		print("super training: ", self.is_training)
+
 
 		if not training:
 			print("\nNot training:")
@@ -240,16 +198,9 @@ class Model(object):
 		# args.batch_size = 1
 		# args.seq_length = 1
 
-		self.args = args
 		self.args.orig_batch_size = self.args.batch_size
 
-		# the type of all variables through the system.
-		# must be a float
-		self.gpu_type = tf.float32
-		self.is_training = training
 
-		self.seq_length = int(self.args.seq_length)
-		self.max_gradient = float(self.args.max_gradient)
 
 		# for the confusion matrix stuff
 		self._confusion = None
@@ -267,20 +218,6 @@ class Model(object):
 
 		args.model = str(args.model).lower()
 
-		print("\n")
-		if args.model == "gru":
-			print("Using GRU Cell")
-			self.cell_fn = rnn.GRUCell
-		elif args.model == "nas":
-			print("Using NAS Cell")
-			self.cell_fn = rnn.NASCell
-		elif args.model == "glstm":
-			self.cell_fn = rnn.GLSTMCell
-		else:
-			print("Using LSTM Cell")
-			self.cell_fn = rnn.LSTMCell
-		print("\n")
-
 		print("\nSetting self.lr = {:.5}".format(args.learning_rate))
 
 		# self.lr = tf.Variable(args.learning_rate, name="lr", dtype=tf.float32)
@@ -289,18 +226,6 @@ class Model(object):
 		print("Cell type is: ", args.model)
 		print("Batch size is: ", args.batch_size)
 
-		# self.cell_fn = rnn.GRUCell
-		# self.cell_fn = rnn.IntersectionRNNCell
-		# self.cell_fn = rnn.NASCell
-
-		print("Setting self.num_batches")
-		self.num_batches = num_batches
-
-		# all teh data for the epoch
-		# all of these are pinned to the gpu
-		# self.all_input_data = None
-		# self.all_target_data = None
-		self._global_step = None
 		# self.inc_step = tf.assign_add(self.global_step, 1, use_locking=True, name="inc_global_step")
 		self.input_data = None
 		self.targets = None
@@ -315,79 +240,13 @@ class Model(object):
 
 		# this maps vectors of len vocab_size => vectors of size rnn_size
 		with tf.name_scope("get_embedding"):
-			embedding = tf.get_variable("embedding",
-										[args.vocab_size, args.embedding_size], trainable=False)
-			inputs = tf.nn.embedding_lookup(embedding, tf.to_int32(self.input_data))
-			self.embedding = embedding
+			self.embedding, inputs = self.get_embedding(self.vocab_size,
+				self.embedding_size, self.input_data, name="input_embedding")
+
 		# inputs => [batch_size, seq_length, embedding_size]
-		# embedding size is decided by tensorflow
 
 
 		print("\nInputs: ", inputs.shape)
-
-		# If using the conv in front of the rnn
-		# conv_input = inputs
-		#
-		# print("\n\nClustering")
-		# print("\tConv input: ", conv_input.shape)
-		#
-		# with tf.name_scope("swap_conv_dims"):
-		# 	conv_input = tf.reshape(conv_input, [self.args.batch_size, self.seq_length, self.args.embedding_size])
-		# 	conv_input = tf.transpose(conv_input, perm=[0, 2, 1])  # swap dims
-		# 	# conv_input = tf.reshape(conv_input, shape=[self.args.batch_size, self.seq_length * self.args.rnn_size, 1])
-		#
-		# print("\tReshaped:   ", conv_input.shape)
-		#
-		# cluster_stride = 1
-		# # cluster1 = tf.layers.conv1d(inputs=output, filters=self.args.seq_length,
-		# # 							kernel_size=[7],
-		# # 							strides=[cluster_stride],
-		# # 							padding="SAME",
-		# # 							activation=lambda x: tf.maximum(0.0, x),
-		# # 							name="cluster1")
-		# #
-		# # print("\tRaw cluster1: ", cluster1.shape)
-		# # print("\tCluster1:     ", cluster1.shape)
-		# #
-		# # # in => [ batch, height, width, channels ]
-		# # # ksize => size of window for each dim
-		# # # strides => stride of window for each dim
-		# # # passing => SAME
-		# #
-		# #
-		# # cluster_pool1 = tf.layers.max_pooling1d(cluster1, pool_size=3,
-		# # 										strides=[2],
-		# # 										padding="SAME",
-		# # 										name="pool1")
-		#
-		# # print("\tClusterPool1: ", cluster_pool1.shape, "\n")
-		#
-		# # self, input, out_size, conv_stride, pool_stride, kernel_size, layer_number):
-		#
-		# print("\tSeq length: ", self.seq_length)
-		#
-		# # input, out_size, conv_stride, pool_stride, kernel_size, layer_number):
-		#
-		# cluster_pool1 = self.add_conv(conv_input=conv_input, out_size=self.seq_length, conv_stride=cluster_stride, pool_stride=2, kernel_size=7, layer_number="1")
-		# print("\tLayer one:    ", cluster_pool1.shape)
-		#
-		# cluster_pool2 = self.add_conv(conv_input=cluster_pool1, out_size=self.seq_length, conv_stride=cluster_stride, pool_stride=2, kernel_size=5, layer_number="2")
-		# print("\tLayer two:    ", cluster_pool2.shape)
-		#
-		# cluster_pool3 = self.add_conv(cluster_pool2, out_size=self.seq_length, conv_stride=cluster_stride, pool_stride=2, kernel_size=3, layer_number="3")
-		# print("\tLayer three: ", cluster_pool3.shape)
-		#
-		# final_conv_out = cluster_pool3
-		#
-		# with tf.name_scope("swap_rnn_dims"):
-		# 	cluster_output = tf.transpose(final_conv_out, perm=[0, 2, 1])
-		# 	# cluster_output = tf.reshape(final_conv_out, shape=[self.args.batch_size, self.seq_length, -1])
-		#
-		#
-		#
-		# print("\tPool Output:  ", cluster_output.shape)
-		# rnn_size = cluster_output.shape[2].value
-		# rnn_input = cluster_output
 
 		# # if using JUST the RNN
 		with tf.name_scope("rnn_size"):
@@ -443,37 +302,14 @@ class Model(object):
 				print("\tUsing averaged outputs")
 				rnn_output = tf.divide(tf.add(rnn_layer_out[0], rnn_layer_out[1]), 2.0, name="average_rnn_outputs")
 
-		# rnn_output = tf.cond(tf.equal(tf.mod(self.step, 150), 0),
-		# 		true_fn=lambda: tf.add(raw_rnn_output, tf.random_normal(raw_rnn_output.shape, dtype=self.gpu_type)),
-		# 		false_fn=lambda: raw_rnn_output)
 		print("\tOutput:   ", rnn_output.shape)
-
-
-
-		# exit(1)
-
-		# rnn_output = tf.transpose(rnn_output, perm=[0, 2, 1])
-		# rnn_pool = tf.layers.max_pooling1d(rnn_output, pool_size=3,
-		# 							   strides=[2],
-		# 							   padding="SAME",
-		# 							   name="rnn_pool")
-		#
-		# print("\tRNN Pool: ", rnn_pool.shaoe)
-		#
-		# rnn_output = tf.transpose(rnn_pool, perm=[0, 2, 1])
-		#
-		# print("Pool Out: ", rnn_output.shape)
 
 		tf.summary.histogram("cell/forward_state", self.cell_state[0])
 		tf.summary.histogram("cell/backward_state", self.cell_state[1])
 
 		# the final layers
 		# maps the outputs	to [ vocab_size ] probs
-		# self.logits = tf.contrib.layers.fully_connected(output, args.vocab_size)
-		self.logits = tf.layers.dense(inputs=rnn_output, units=self.args.num_classes, name="logits")
-
-		# self.logits = tf.contrib.layers.fully_connected(inputs=rnn_output,
-		# 												num_outputs=self.args.num_classes)
+		self.logits = self.get_logits(rnn_output, self.num_classes, "logits")
 
 		# first logits shape => [ batch_size, seq_length, num_classes ]
 		print("\nLogits shape: ", self.logits.shape)
@@ -506,8 +342,6 @@ class Model(object):
 		# make sure it's not one, else it will never decrease
 		if self.args.learning_rate == 1:
 			self.args.learning_rate = .9999
-
-		self.global_step = tf.Variable(-1, name="global_step", trainable=False)
 
 		self.min_learn_rate = .00005
 
@@ -783,10 +617,6 @@ class Model(object):
 	@property
 	def loss_scale_factors(self):
 		return {"fn": self.false_negative_loss_scale_factor, "actual: ": self._loss_scale}
-
-	@staticmethod
-	def loglog(item):
-		return tf.log(tf.log(tf.to_float(item)), name="loglog")
 
 	@staticmethod
 	def fn_punish(number):
