@@ -28,8 +28,8 @@ if	count $argv > /dev/null
 	set concat_states 1
 
 	if [ $concat_states = 1 ]
-	    echo \n"Setting MODEL_USE_RNN_CONCAT = 1"\n
-	    set -g -x  MODEL_USE_RNN_CONCAT 1
+		echo \n"Setting MODEL_USE_RNN_CONCAT = 1"\n
+		set -g -x  MODEL_USE_RNN_CONCAT 1
 	end
 
 
@@ -52,7 +52,7 @@ if	count $argv > /dev/null
 	end
 
 	echo \n"Launching model..." \n
-	python ./test.py --save_dir=$save_dir -n=$n --run=$run
+	python ./src/test.py --save_dir=$save_dir -n=$n --run=$run
 
 else
 	echo "Please provide the models directory"
