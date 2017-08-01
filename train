@@ -123,7 +123,7 @@ if	count $argv > /dev/null
 	end
 
 	echo "Launching the model..."
-	python train.py --init_from=$init_from --embedding_size=$embedding_size --model=$model --use_weights=$use_weights --decay_rate=$decay_rate --max_gradient=$max_grad --batch_size=$batch_size --log_dir=$log_dir --data_dir=$data_dir --save_dir=$save_dir --print_cycle=$print_cycle --seq_length=$seq_len --num_epochs=$num_epochs --learning_rate=$lr --save_every=$save_every --output_keep_prob=$out_prob --input_keep_prob=$in_prob --num_layers=$num_layers --rnn_size=$rnn_size --gpu=$gpu
+	python ./src/train.py --init_from=$init_from --embedding_size=$embedding_size --model=$model --use_weights=$use_weights --decay_rate=$decay_rate --max_gradient=$max_grad --batch_size=$batch_size --log_dir=$log_dir --data_dir=$data_dir --save_dir=$save_dir --print_cycle=$print_cycle --seq_length=$seq_len --num_epochs=$num_epochs --learning_rate=$lr --save_every=$save_every --output_keep_prob=$out_prob --input_keep_prob=$in_prob --num_layers=$num_layers --rnn_size=$rnn_size --gpu=$gpu
 
 	# echo "Checking no delete: " $no_delete
 	if [ $no_delete = 1 ]
@@ -136,7 +136,7 @@ if	count $argv > /dev/null
 	# echo "Checking do_test"
 	if [ $do_test = 1 ]
 		echo "Testing..."
-		python test.py --save_dir=$save_dir -n=$num_tests
+		python ./src/test.py --save_dir=$save_dir -n=$num_tests
 	end
 
 	# echo "Done"
