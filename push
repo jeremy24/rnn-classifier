@@ -6,11 +6,13 @@
 
 if count $argv[1] > /dev/null
 	set message $argv[1]
+
+	set branch "development"
 	
 	git add .
 	git commit -m $argv[1]
-	git push origin development
-	git push --atomic --progress  https://github.com/jeremy24/rnn-classifier.git master
+	git push origin $branch
+	git push --atomic --progress  https://github.com/jeremy24/rnn-classifier.git $branch
 else
 	echo "Please provide a commit message"
 end	 
