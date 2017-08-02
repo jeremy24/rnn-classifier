@@ -165,10 +165,70 @@ class TextLoader(object):
 		# exit(1)
 		return {"x": encoded_seq, "y": labels}
 
-	def preprocess(self, input_path, todo=float("inf")):
+
+	def get_min_percent(self):
+		min_percent = 0.05
+		if "MODEL_DATA_MIN_PERCENT" in os.environ:
+			try:
+				passed_value = float(os.environ["MODEL_DATA_MIN_PERCENT"])
+				if 0.0 < passed_value <= 1.0:
+					min_percent = passed_value
+					print("Min percent passed in from env and was changed to: ", min_percent)
+				elif 0.0 < passed_value <= 100.0:
+					min_percent = passed_value / 100.0
+					print("Min percent passed in from env and was changed to: ", min_percent)
+				else:
+					print("\nInvalid value passed in for min percent, not using:  ", passed_value)
+			except ValueError:
+				print("\nMin percent passed as env variable is not a valid float, not using it: ",
+					  os.environ["MODEL_DATA_MIN_PERCENT"], "\n")
+		return min_percent
 
 
+	def preprocess_fake_data(self, input_path, todo):
+		print("\tUsing other data")
 		data = None
+		files = os.listdir(input_path)
+		files = [os.path.join(input_path, filename) for filename in files if filename[0] != "."]
+		for filename in files:
+			print("\t{}".format(filename))
+			data = data + "\n\n" if data is not None else ""
+			with open(filename, "r") as f:
+				for line in f:
+					data += line
+			print("\n")
+
+		if self.max_word_length is not None:
+			data = self.trim_to_max_word_length(data, self.max_word_length)
+
+		min_percent = self.get_min_percent()
+		if todo < len(data) * min_percent:
+			print("todo of {:,} is less than {}% of {:,}, changing..."
+				.format(todo, int(min_percent * 100), len(data)))
+
+			todo = int(len(data) * min_percent)
+
+		print("Preprocessing {:,} items from data".format(todo))
+		print("Trimming data to length of todo")
+		data = data[:todo]
+
+		print("Replacing spaces: {}".format(self.replace_multiple_spaces))
+		if self.replace_multiple_spaces:
+			print("\nStripping multiple newlines")
+			print("\tBefore: {:,}".format(len(data)))
+			# data = re.sub(r"[\n]{3,}", "\n", data)
+			data = re.sub(r"[\t]{2}", "\t", data)
+			data = re.sub(r"[\t]{2}", "\t", data)
+			data = re.sub(r"[\n]{2}", "\n", data)
+			print("\tAfter:  {:,}".format(len(data)))
+
+		seqs = list(data)
+		# make sure its flat
+		seqs = np.ndarray.flatten(np.array(seqs))
+
+		return self.preprocess_helper(seqs, data)
+
+	def preprocess(self, input_path, todo=float("inf")):
 		start = time.time()
 
 		print("\nProcessing files from input path: {}".format(input_path))
@@ -178,83 +238,11 @@ class TextLoader(object):
 			print("\tUsing real data")
 			preprocess_data = self.real_data_helper(input_path)
 		else:
-			print("\tUsing other data")
-			files = os.listdir(input_path)
-			files = [os.path.join(input_path, filename) for filename in files if filename[0] != "."]
-
-			for filename in files:
-				print("\t{}".format(filename))
-				data = data + "\n\n" if data is not None else ""
-				with open(filename, "r") as f:
-					for line in f:
-						data += line
-
-			print("\n")
-
-			if self.max_word_length is not None:
-				data = self.trim_to_max_word_length(data, self.max_word_length)
-
-			self.chars = list()
-			# self.vocab = dict()
-			# self.vocab_size = 0
-
-			min_percent = .05  # 0.20
-
-			if "MODEL_DATA_MIN_PERCENT" in os.environ:
-				try:
-					passed_value = float(os.environ["MODEL_DATA_MIN_PERCENT"])
-					if 0.0 < passed_value <= 1.0:
-						min_percent = passed_value
-						print("Min percent passed in from env and was changed to: ", min_percent)
-					elif 0.0 < passed_value <= 100.0:
-						min_percent = passed_value / 100.0
-						print("Min percent passed in from env and was changed to: ", min_percent)
-					else:
-						print("\nInvalid value passed in for min percent, not using:  ", passed_value)
-				except ValueError:
-					print("\nMin percent passed as env variable is not a valid float, not using it: ",
-						  os.environ["MODEL_DATA_MIN_PERCENT"], "\n")
-
-			if todo < len(data) * min_percent:
-				print("todo of {:,} is less than {}% of {:,}, changing..."
-					  .format(todo, int(min_percent * 100), len(data)))
-
-				todo = len(data) * min_percent
-				todo = int(todo)
-
-			print("Preprocessing {:,} items from data".format(todo))
-			print("Replacing spaces: {}".format(self.replace_multiple_spaces))
-			print("Trimming data to length of todo")
-
-			if self.replace_multiple_spaces:
-				print("\nStripping multiple newlines")
-				print("\tBefore: {:,}".format(len(data)))
-				# data = re.sub(r"[\n]{3,}", "\n", data)
-				data = re.sub(r"[\t]{2}", "\t", data)
-				data = re.sub(r"[\t]{2}", "\t", data)
-				data = re.sub(r"[\n]{2}", "\n", data)
-				print("\tAfter:  {:,}".format(len(data)))
-
-			data = data[:todo]
-			# flatten = lambda l: [item for sublist in l for item in sublist]
-			start = time.time()
-			seqs = list(data)
-
-			# make sure its flat
-			seqs = np.ndarray.flatten(np.array(seqs))
-
-			label_start = time.time()
-
-			print("Starting preprocess {:,} items"
-				  .format(len(seqs)))
-
-			preprocess_data = self.preprocess_helper(seqs, data)
-			print("Labels generated in {:,.3f}".format(time.time() - label_start))
+			preprocess_data = self.preprocess_fake_data(input_path, todo)
 
 		# if/else is done so grab the correct data out
 		encoded = preprocess_data["x"]
 		labels = preprocess_data["y"]
-
 
 
 		# drop any dupes
@@ -370,14 +358,6 @@ class TextLoader(object):
 			len(x_batches[0]),
 			len(x_batches[0][0])
 		))
-
-		# z = x_batches[0]
-		# print("\nA sample of the data: (## signifies the boundaries between sequences)\n")
-		# print("{}##{}##{}##{}##{}##".format("".join([chr(a) for a in z[0]]),
-		# 		"".join([chr(a) for a in z[1]]),
-		# 		"".join([chr(a) for a in z[2]]),
-		# 		"".join([chr(a) for a in z[3]]),
-		# 		"".join([chr(a) for a in z[4]])).replace("\t", "\t"))
 
 		# only drop up to a quarter of the batches
 		max_drop = len(x_batches) / 4

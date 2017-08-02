@@ -210,11 +210,11 @@ class ModelBase(object):
 		tf.summary.scalar(name + "/min", tf.reduce_min(tensor))
 		tf.summary.scalar(name + "/mean", tf.reduce_mean(tensor))
 
-
-	@ifnotdefined
+	@define_scope(scope="targets_to_floats")
 	def float_targets(self):
 		return tf.to_float(self.targets)
 
+	@property
 	def cost(self):
 		"""
 		An alias for loss
