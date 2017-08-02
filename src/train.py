@@ -9,6 +9,7 @@ import json
 import traceback
 from six.moves import cPickle
 
+from training_helpers import *
 from labeler import labeler, LabelTypes
 from data_loader import TextLoader
 from model import Model
@@ -149,68 +150,6 @@ def save_model(args, saver, sess, step, dump=True, verbose=True):
 		print("model saved to {}".format(checkpoint_path))
 
 
-class Confusion(object):
-	def __init__(self, sess, model, feed):
-		self.sess = sess
-		self.model = model
-		self.feed = feed
-
-	def __enter__(self):
-		return self.sess.run(self.model.confusion, self.feed)
-
-	def __exit__(self, error_type, value, trace):
-		if value:
-			print("Confusion Error: {}\n{}\n".format(error_type, value))
-			traceback.print_tb(trace)
-			exit(1)
-
-
-class NormalTrain(object):
-	def __init__(self, sess, model, feed):
-		self.sess = sess
-		self.feed = feed
-		self.args = [model.cost, model.final_state, model.train_op, model.loss]
-
-	def __enter__(self):
-		cost, state, _, loss = self.sess.run(self.args, self.feed)
-		return state, loss
-
-	def __exit__(self, error_type, value, trace):
-		if value:
-			print("NormalTrain Error: {}\n{}\n{}".format(error_type, value, trace))
-			exit(1)
-
-
-class PrintTrain(object):
-	def __init__(self, sess, model, summaries, feed):
-		self.sess = sess
-		self.feed = feed
-		self.args = [summaries, model.loss, model.final_state,
-					 model.train_op, model.lr, model.global_step, model.their_confusion]
-
-	def __enter__(self):
-		summary, loss, state, _, lr, g_step, confusion = self.sess.run(self.args, feed_dict=self.feed)
-		return {"summary": summary, "train_loss": loss,
-				"state": state, "lr": lr, "g_step": g_step, "confusion": confusion}
-
-	def __exit__(self, error_type, value, trace):
-		if value:
-			print("PrintTrain Error: {}\n{}\n".format(error_type, value))
-			traceback.print_tb(trace)
-			exit(1)
-
-
-def hidden_size(num_in, num_out):
-	upper = num_out if num_out > num_in else num_in
-	lower = num_in if num_in < num_out else num_out
-	upper = upper if 2 * num_in < upper else 2 * num_in
-	mid = (2 / 3) * num_in + num_out
-	print("\n upper: {:.1f}   mid: {:.1f}	lower: {:.1f}:".format(upper, mid, lower))
-	if upper > mid > lower:
-		return int(mid)
-	return int(upper + lower) // 2
-
-
 def check_confusion(raw, theirs):
 	assert raw["fn"] == theirs[1, 0], "False negatives don't match"
 	assert raw["fp"] == theirs[0, 1], "False positives don't match"
@@ -230,53 +169,11 @@ def bucket_by_length(words):
 	return buckets
 
 
-class dump_into_namespace:
-	def __init__(self, env, *args):
-		self.vars = dict([(x, env[x]) for v in args for x in env if v is env[x]])
-
-	def __getattr__(self, name):
-		print(self.vars)
-		return self.vars[name]
-
-
 def init_globals(sess):
 	print("Saving global variables")
 	sess.run(tf.global_variables_initializer())
 	saver = tf.train.Saver(tf.global_variables())
 	return saver
-
-
-def get_sess_config():
-	# used if you want a lot of logging
-	sess_config = tf.ConfigProto()
-
-	# used to watch gpu memory thats actually used
-	sess_config.gpu_options.allow_growth = True
-
-	# used to show where things are being placed
-	sess_config.log_device_placement = False
-
-	jit_level = tf.OptimizerOptions.ON_1
-
-	sess_config.graph_options.optimizer_options.global_jit_level = jit_level
-	return sess_config
-
-
-def copy_data_info(args, data_loader):
-	args.vocab_size = data_loader.vocab_size
-	args.batch_size = data_loader.batch_size
-	args.label_ratio = data_loader.ratio
-	args.num_classes = data_loader.num_classes
-	args.num_batches = data_loader.num_batches
-	args.num_chars = data_loader.num_chars
-	return args
-
-def get_flags(num_batches, num_epochs, epoch, batch, step):
-	last_batch = batch == num_batches - 1
-	last_epoch = epoch == num_epochs - 1
-	s = step - (epoch * num_batches)
-	last_in_epoch = s == num_batches - 1
-	return last_batch, last_epoch, last_in_epoch
 
 
 def do_init(args, data_loader):
@@ -324,9 +221,6 @@ def train(args):
 	print("Num classes: ", args.num_classes)
 	print("Label Ratio: ", args.label_ratio)
 	print("Changed rnn size to:", args.rnn_size)
-	
-	# print("\nDumping args data")
-	# dump_data(data_loader, args)
 
 	# setup printing cycle
 	print_cycle = args.print_cycle
@@ -341,31 +235,16 @@ def train(args):
 	run_options = tf.RunOptions()
 	run_options.trace_level = tf.RunOptions.FULL_TRACE
 
-	run_meta = tf.RunMetadata()
-
 	# set up some data capture lists
 	global_start = time.time()
 
 	# setup stuff for more logging 
 	# so we can save it to JSON
-	args.data = dict()
+	args.data = get_metrics_holder()
 	args.data["epoch_size"] = len(data_loader.train_batches)
-	args.data["losses"] = list()
-	args.data["avg_time_per_step"] = list()
-	args.data["logged_time"] = list()
-	args.data["false_positives"] = list()
-	args.data["false_negatives"] = list()
-	args.data["step"] = list()
 
-	args.data["label_ratio"] = list()
-	
 	# the number of trainable params in the model
 	args.num_params = int(np.sum([np.prod(v.get_shape().as_list()) for v in tf.trainable_variables()]))
-
-	# refresh dumped data since some models
-	# change the values of args
-	# dump_data(data_loader, model.args)
-	# dump_args(args)
 
 	print("\nModel has {:,} trainable params".format(args.num_params))
 	print("Data has {:,} individual characters\n".format(data_loader.num_chars))
@@ -400,8 +279,6 @@ def train(args):
 
 		# start loss as infinity
 		lowest_epoch_loss = float("inf")
-		highest_true_positives = float("-inf")
-		lowest_false_positives = float("inf")
 		patience = 2
 
 		# declare here so final save can access it
@@ -510,33 +387,18 @@ def train(args):
 					true_positives.append(conf[1][1])
 					false_positives.append(conf[0][1])
 
-			highest_true_positives = float("-inf")
-			lowest_false_positives = float("inf")
+			# highest_true_positives = float("-inf")
+			# lowest_false_positives = float("inf")
+			#
+			# if np.median(true_positives) > highest_true_positives:
+			# 	highest_true_positives = np.median(true_positives)
+			# 	print("New highest true positives: ", highest_true_positives)
+			#
+			# if np.median(false_positives) < lowest_false_positives:
+			# 	lowest_false_positives = np.median(false_positives)
+			# 	print("New lowest false positives: ", lowest_false_positives)
 
-			if np.median(true_positives) > highest_true_positives:
-				highest_true_positives = np.median(true_positives)
-				print("New highest true positives: ", highest_true_positives)
-
-			if np.median(false_positives) < lowest_false_positives:
-				lowest_false_positives = np.median(false_positives)
-				print("New lowest false positives: ", lowest_false_positives)
-
-			# if new epoch loss is 0.5% lower than lowest loss, extend patience
-			this_epoch_loss = np.median(epoch_loss)
-			if this_epoch_loss + (this_epoch_loss * .008) <= lowest_epoch_loss:
-				patience += 2
-				lowest_epoch_loss = this_epoch_loss
-				print("Added 2 to patience, new lowest loss is {:.5f}".format(lowest_epoch_loss))
-			elif this_epoch_loss + (this_epoch_loss * .005) <= lowest_epoch_loss:
-				patience += 1
-				lowest_epoch_loss = this_epoch_loss
-				print("Added 1 to patience, new lowest loss is {:.5f}".format(lowest_epoch_loss))
-			elif this_epoch_loss + (this_epoch_loss * .008) > lowest_epoch_loss:
-				patience -= 2
-				print("Removing 2 from patience")
-			elif this_epoch_loss + (this_epoch_loss * .005) > lowest_epoch_loss:
-						patience -= 1
-						print("Removing 1 from patience")
+			patience, lowest_epoch_loss = calculate_patience(epoch_loss, patience, lowest_epoch_loss)
 
 		# save model after all batches are done
 		print("\nTraining is done, saving model")

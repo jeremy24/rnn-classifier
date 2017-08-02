@@ -116,6 +116,9 @@ class ModelBase(object):
 		inputs = tf.nn.embedding_lookup(embedding, tf.to_int32(input_data))
 		return embedding, inputs
 
+	def custom_cell(self, size):
+		pass
+
 	@staticmethod
 	def assign_cell_fn(model):
 		model = str(model).lower().strip()
@@ -131,6 +134,8 @@ class ModelBase(object):
 		elif model == "lstm":
 			print("Using LSTM Cell")
 			return rnn.LSTMCell
+		elif model == "custom":
+			return self.custon_cell
 		else:
 			raise ModelException("Invalid model type specified: {}".format(model))
 
@@ -165,7 +170,6 @@ class ModelBase(object):
 		:return tensor
 		"""
 		return tf.log(tf.log(tf.to_float(tensor)), name="loglog")
-
 
 	@staticmethod
 	def _apply_rnn_dropout(cell, in_prob=1.0, out_prob=1.0,

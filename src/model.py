@@ -52,7 +52,13 @@ class Model(ModelBase):
 			c = self.add_dropout(c, self.args.input_keep_prob, self.args.output_keep_prob)
 		return c
 
+
+	def custom_cell(self, size):
+		# lambda x: x if tf.greater(x, 0.0) else 0.01*x
+		return rnn.LSTMCell(size, use_peepholes=True, activation=tf.nn.relu6)
+
 	def build_one_layer(self, size):
+
 		cell = self.cell_fn(size)
 		cell = self.add_dropout(cell, self.args.input_keep_prob, self.args.output_keep_prob)
 		return [cell]
@@ -69,8 +75,6 @@ class Model(ModelBase):
 		if self.args.num_layers == 1:
 			ret = self.build_one_layer(size)
 		# only working number of layers right now
-		elif self.args.num_layers == 3:
-			ret = self.build_three_layers()
 		else:
 			for x in range(self.args.num_layers):
 				ret.append(self.get_one_cell())
