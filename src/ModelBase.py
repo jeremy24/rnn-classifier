@@ -26,6 +26,13 @@ class ModelBase(object):
 		self._is_training = bool(is_training)
 
 		# hang initial None data
+		self.optimizer = None
+		self.min_learn_rate = .00005
+		self.input_data = None
+		self.targets = None
+
+		self._loss = None
+
 		self.global_step = tf.Variable(-1, name="global_step", trainable=False)
 
 		# the type of all variables through the system.
@@ -37,6 +44,11 @@ class ModelBase(object):
 			self.num_batches = int(num_batches)
 		except Exception as ex:
 			raise ModelException("Invalid num batches:  {}".format(ex))
+
+		try:
+			self.decay_rate = float(args.decay_rate)
+		except Exception as ex:
+			raise ModelException("Invalid decay rate:  {}".format(ex))
 
 		try:
 			self.embedding_size = int(args.embedding_size)
@@ -76,10 +88,26 @@ class ModelBase(object):
 		self.args = args
 
 
+	def clip_gradients(self, loss, do_summary=True):
+		"""
+		Clip gradients by global norm
+		:param do_summary:
+		:return: gradients to be applied to optimizer
+		"""
+		assert loss is not None, "Do not have loss yet"
+
+		tvars = tf.trainable_variables()
+		gradients = tf.gradients(loss, tvars)
+		clipped_gradients, global_grad_norm = tf.clip_by_global_norm(gradients, self.max_gradient)
+
+		if do_summary:
+			tf.summary.scalar("global_gradient_norm", global_grad_norm)
+
+		return zip(clipped_gradients, tvars)
 
 	@staticmethod
-	def get_logits(input, output_size, name="logits"):
-		return tf.layers.dense(inputs=input, units=output_size, name=name)
+	def get_logits(input_data, output_size, name="logits"):
+		return tf.layers.dense(inputs=input_data, units=output_size, name=name)
 
 	@staticmethod
 	def get_embedding(vocab_size, embedding_size, input_data, name="embedding"):
@@ -168,3 +196,35 @@ class ModelBase(object):
 								  output_keep_prob=out_prob, state_keep_prob=state_prob,
 								  variational_recurrent=variational, input_size=input_size,
 								  seed=seed, dtype=dtype)
+
+	@staticmethod
+	def add_summaries(tensor, name):
+		"""
+		Add min, max, and mean scalar summaries for a variable
+		:param tensor:
+		:param name:
+		:return:
+		"""
+		assert isinstance(name, str)
+		tf.summary.scalar(name + "/max", tf.reduce_max(tensor))
+		tf.summary.scalar(name + "/min", tf.reduce_min(tensor))
+		tf.summary.scalar(name + "/mean", tf.reduce_mean(tensor))
+
+
+	@ifnotdefined
+	def float_targets(self):
+		return tf.to_float(self.targets)
+
+	def cost(self):
+		"""
+		An alias for loss
+		:return:
+		"""
+		return self.loss
+
+	def loss(self):
+		"""
+		Abstract method
+		:return:
+		"""
+		pass

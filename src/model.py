@@ -46,47 +46,6 @@ class Model(ModelBase):
 		self.input_data = tf.placeholder(self.gpu_type, shape=batch_shape, name="input_data")
 		self.targets = tf.placeholder(self.gpu_type, shape=batch_shape, name="targets")
 
-	def build_three_layers(self):
-		"""
-		Build the cells for a three layer network
-		:param use_highway:
-		:return: a list of LSTM cells
-		"""
-		# only working number of layers right now
-		print("\nHave three layers, making sandwich...")
-		cells = []
-
-		print("\tStarting rnn size: ", self.args.rnn_size)
-		print("\tStarting seq_length: ", self.args.seq_length)
-
-		outer_size = self.args.rnn_size
-		middle_size = outer_size // 2
-
-		if True:
-			self.args.rnn_size = outer_size
-			print("\tChanged RNN size to: ", self.args.rnn_size)
-
-		print("\tOuter size: {}  Middle size: {}".format(outer_size,
-														 middle_size))
-
-		# set up intersection stuff
-		highway = tf.contrib.rnn.HighwayWrapper
-
-		# project it onto the middle
-		first = self.cell_fn(outer_size)
-		middle = self.cell_fn(outer_size)
-		last = self.cell_fn(outer_size)
-
-		# dropout on first and last
-		first = self.add_dropout(first, self.args.input_keep_prob, self.args.output_keep_prob)
-		middle = self.add_dropout(middle, self.args.input_keep_prob, self.args.output_keep_prob)
-		last = self.add_dropout(last, self.args.input_keep_prob, self.args.output_keep_prob)
-
-		cells.append(first)
-		cells.append(middle)
-		cells.append(last)
-		return cells
-
 	def get_one_cell(self, add_dropout=True):
 		c = self.cell_fn(self.args.rnn_size)
 		if add_dropout:
@@ -173,15 +132,12 @@ class Model(ModelBase):
 		tf.summary.histogram("conv/pool_" + layer_number, pool)
 		return pool
 
-	def zero_states(self):
-		pass
 
 	def __init__(self, args, num_batches=None, training=True, gpu_dtype=tf.float32):
 		""" init """
 
 		# setup base class
 		super().__init__(args, num_batches, training, gpu_dtype)
-
 
 		print("\n\nBuilding a NEW model")
 		print("\tNum batches: ", num_batches)
@@ -194,13 +150,8 @@ class Model(ModelBase):
 			print("\nNot training:")
 			print("\tPrev batch size: ", args.batch_size)
 			print("\tPrex seq length: ", args.seq_length)
-		# we now leave setting these args up the to calling prgm
-		# args.batch_size = 1
-		# args.seq_length = 1
 
 		self.args.orig_batch_size = self.args.batch_size
-
-
 
 		# for the confusion matrix stuff
 		self._confusion = None
@@ -226,17 +177,11 @@ class Model(ModelBase):
 		print("Cell type is: ", args.model)
 		print("Batch size is: ", args.batch_size)
 
-		# self.inc_step = tf.assign_add(self.global_step, 1, use_locking=True, name="inc_global_step")
-		self.input_data = None
-		self.targets = None
 		self.step = None
 
 		print("Calling hang_gpu_variables")
 		# assign values to the above variables
 		self.hang_gpu_variables()
-
-		# self.batch = tf.train.batch(self.all_input_data, self.args.batch_size, name="input_batch_queue")
-		# print("\nBatch size from tf.batch: ", self.batch.shape)
 
 		# this maps vectors of len vocab_size => vectors of size rnn_size
 		with tf.name_scope("get_embedding"):
@@ -304,9 +249,6 @@ class Model(ModelBase):
 
 		print("\tOutput:   ", rnn_output.shape)
 
-		tf.summary.histogram("cell/forward_state", self.cell_state[0])
-		tf.summary.histogram("cell/backward_state", self.cell_state[1])
-
 		# the final layers
 		# maps the outputs	to [ vocab_size ] probs
 		self.logits = self.get_logits(rnn_output, self.num_classes, "logits")
@@ -336,14 +278,11 @@ class Model(ModelBase):
 		# logits_shape = [self.args.batch_size, self.args.seq_length, self.args.num_classes]
 		# self.logits = tf.reshape(self.logits, logits_shape)
 
-		# self._lr = tf.Variable(self.args.learning_rate, name="lr", dtype=tf.float32, trainable=False)
-		self.decay_rate = float(self.args.decay_rate)
+
 
 		# make sure it's not one, else it will never decrease
 		if self.args.learning_rate == 1:
 			self.args.learning_rate = .9999
-
-		self.min_learn_rate = .00005
 
 		with tf.name_scope("lr_decay"):
 			self.lr_decay_fn = tf.train.exponential_decay(self.args.learning_rate,
@@ -360,56 +299,17 @@ class Model(ModelBase):
 							  true_fn=lambda: self.min_learn_rate,
 							  false_fn=lambda: self.lr_decay_fn)
 
-		print("\nSetup learning rate decay:")
-		print("\tlr: {}\n\tdecay every {} steps\n\tdecay rate: {}\n\tstaircase: {}"
-			  .format(self.lr, self.num_batches // 2, self.decay_rate, True))
-
-		# with tf.name_scope("optimizer"):
-		# 	self.optimizer = tf.train.AdamOptimizer(learning_rate=self.lr)
-		#
-		# # put this here to make sure all internal optimizer variables get initialized
-		# with tf.name_scope("train"):
-		# 	self.train_op = self.optimizer.minimize(self.loss)
-
-
-		with tf.name_scope("clip_gradients"):
-			tvars = tf.trainable_variables()
-			gradients = tf.gradients(self.loss, tvars)
-			clipped_gradients, self.global_gradient_norm = tf.clip_by_global_norm(gradients, self.max_gradient)
-
-			tf.summary.scalar("global_grad_norm", self.global_gradient_norm)
 
 		with tf.name_scope("optimizer"):
 			self.optimizer = tf.train.AdamOptimizer(learning_rate=self.lr)
 
-		# self.optimizer = tf.train.AdagradOptimizer(learning_rate=self.lr)
-
-			# self.optimizer = tf.train.RMSPropOptimizer(learning_rate=self.lr)
-
-		try:
-			self.train_gradients = zip(clipped_gradients, tvars)
-		except ValueError as ex:
-			print("Unable to re combine vars and grads, vars: {:,}  grads: {:,}".format(
-				len(tvars), len(clipped_gradients)
-			), ex)
-			exit(1)
+		with tf.name_scope("clip_gradients"):
+			self.train_gradients = self.clip_gradients(self.loss)
 
 		with tf.name_scope("apply_gradients"):
 			self.train_op = self.optimizer.apply_gradients(self.train_gradients,
 													   global_step=self.global_step,
 													   name="apply_gradients")
-
-		try:
-			for g, cg in zip(gradients, clipped_gradients):
-				name = "grads/" + g.name
-				tf.summary.histogram("raw/" + name, g)
-				tf.summary.histogram("clipped/" + name, cg)
-		except ValueError as ex:
-			print("Error hanging gradient histograms: ", ex)
-			exit(1)
-
-		# tf.summary.histogram("raw_gradients", gradients)
-		# tf.summary.histogram("clipped_gradients", gradients)
 
 		# self.train_op = tf.contrib.layers.optimize_loss(
 		# 	loss=self.loss,
@@ -440,10 +340,6 @@ class Model(ModelBase):
 		# add this to make sure the annoying thing is initialized like it should be...
 		confusion = self.confusion
 
-	@staticmethod
-	def add_summaries(item, name):
-		tf.summary.scalar(name + "_max", tf.reduce_max(item))
-		tf.summary.scalar(name + "_min", tf.reduce_min(item))
 
 	@ifnotdefined
 	def onehot_labels(self):
@@ -545,10 +441,6 @@ class Model(ModelBase):
 											 reduction=tf.losses.Reduction.NONE)
 
 	@ifnotdefined
-	def float_targets(self):
-		return tf.to_float(self.targets)
-
-	@ifnotdefined
 	def twod_predictions(self):
 		with tf.name_scope("2d_predictions"):
 			predictions = tf.nn.softmax(self.logits)
@@ -643,11 +535,6 @@ class Model(ModelBase):
 					   false_fn=lambda: self.fn_punish(value))
 		tf.summary.scalar(name="loss_scale_computed", tensor=cond)
 		return cond  # tf.assign(value, cond)
-
-	@ifnotdefined
-	def cost(self):
-		cost = self.loss
-		return cost
 
 	@ifnotdefined
 	def predictions(self):
